@@ -1,0 +1,40 @@
+# 内容服务配置 - 开发环境
+
+server:
+  port: 8084
+
+spring:
+  application:
+    name: duda-content-provider
+
+  # 数据源配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://120.26.170.213:3306/duda_content?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: duda2024
+    druid:
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+      enabled: true
+
+# 内容服务特定配置
+duda:
+  content:
+    # 文件存储配置
+    storage:
+      type: local  # local, oss, cos
+      path: /var/www/duda/uploads
+    # 图片处理配置
+    image:
+      thumbnail: true
+      max-width: 1920
+      max-height: 1080

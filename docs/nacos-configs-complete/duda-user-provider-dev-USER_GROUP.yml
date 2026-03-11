@@ -1,0 +1,36 @@
+# 用户服务配置 - 开发环境
+
+server:
+  port: 8082
+
+spring:
+  application:
+    name: duda-user-provider
+
+  # 数据源配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://120.26.170.213:3306/duda_user?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: duda2024
+    druid:
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+
+# 用户服务特定配置
+duda:
+  user:
+    default-avatar: https://duda.com/default-avatar.png
+    nickname-prefix: 用户
+    register:
+      enabled: true
+      email-required: false
+      phone-required: true

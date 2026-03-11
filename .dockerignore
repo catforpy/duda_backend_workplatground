@@ -1,0 +1,61 @@
+# Docker 构建忽略文件
+# 减少构建上下文大小，加快构建速度
+
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+.mvn/
+mvnw
+mvnw.cmd
+
+# IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VS Code
+.vscode/
+
+# 日志文件
+*.log
+logs/
+log/
+
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS 文件
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# 文档
+docs/
+README.md
+*.md
+
+# 测试
+test/
+**/test/
+
+# Docker 文件（避免递归）
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 其他
+.env
+*.env
+.env.*

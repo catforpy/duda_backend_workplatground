@@ -1,0 +1,77 @@
+# 网关服务配置 - 开发环境
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: duda-gateway
+
+  cloud:
+    gateway:
+      # 服务发现配置
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+
+      # 路由配置
+      routes:
+        # 认证服务路由
+        - id: duda-auth-provider
+          uri: lb://duda-auth-provider
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - StripPrefix=2
+
+        # 用户服务路由
+        - id: duda-user-provider
+          uri: lb://duda-user-provider
+          predicates:
+            - Path=/api/user/**
+          filters:
+            - StripPrefix=2
+
+        # 搜索服务路由（预留）
+        - id: duda-search-provider
+          uri: lb://duda-search-provider
+          predicates:
+            - Path=/api/search/**
+          filters:
+            - StripPrefix=2
+
+        # 内容服务路由（预留）
+        - id: duda-content-provider
+          uri: lb://duda-content-provider
+          predicates:
+            - Path=/api/content/**
+          filters:
+            - StripPrefix=2
+
+      # 全局 CORS 配置
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+
+# 网关特定配置
+duda:
+  gateway:
+    # 认白名单（不需要认证的路径）
+    auth:
+      skip-paths:
+        - /api/auth/login
+        - /api/auth/register
+        - /api/auth/logout
+        - /api/auth/captcha
+        - /actuator/**

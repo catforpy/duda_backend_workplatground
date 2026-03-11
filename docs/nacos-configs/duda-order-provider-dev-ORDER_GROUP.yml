@@ -1,0 +1,32 @@
+# 订单服务配置 - 开发环境
+
+server:
+  port: 8085
+
+spring:
+  application:
+    name: duda-order-provider
+
+  # 数据源配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://120.26.170.213:3306/duda_order?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: duda2024
+    druid:
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+
+# 订单服务特定配置
+duda:
+  order:
+    # 订单超时配置
+    timeout:
+      unpaid: 1800  # 30分钟，未支付订单超时
+      completed: 7  # 7天后自动完成
+    # 分页配置
+    page:
+      max-size: 100
+      default-size: 20

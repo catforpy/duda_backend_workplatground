@@ -1,0 +1,2 @@
+com.duda.common.rocketmq.config.RocketMQConfig
+com.duda.common.rocketmq.config.RocketMQMessageConverterConfig

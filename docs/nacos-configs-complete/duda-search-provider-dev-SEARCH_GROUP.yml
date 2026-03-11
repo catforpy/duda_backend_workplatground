@@ -1,0 +1,41 @@
+# 搜索服务配置 - 开发环境
+
+server:
+  port: 8083
+
+spring:
+  application:
+    name: duda-search-provider
+
+  # 数据源配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://120.26.170.213:3306/duda_search?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: duda2024
+    druid:
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+
+  # Elasticsearch 配置（如果使用）
+  data:
+    elasticsearch:
+      client:
+        rest:
+          uris: http://120.26.170.213:9200
+
+# 搜索服务特定配置
+duda:
+  search:
+    index:
+      prefix: duda_
+      shard-count: 3
+      replica-count: 1
