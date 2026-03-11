@@ -77,6 +77,7 @@ public class UserServiceImpl implements UserService {
         userPO.setPhone(registerReq.getPhone());
         userPO.setEmail(registerReq.getEmail());
         userPO.setStatus("inactive"); // 默认未激活
+        userPO.setDeleted(0); // 未删除
 
         // 4. 保存到数据库
         int result = userMapper.insert(userPO);

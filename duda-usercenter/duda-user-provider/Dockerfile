@@ -7,10 +7,12 @@ LABEL description="用户Provider服务 - RPC服务实现"
 LABEL version="1.0.0"
 
 # 设置时区
-RUN apk add --no-cache tzdata && \
-    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+RUN apt-get update && \
+    apt-get install -y tzdata wget && \
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
-    apk del tzdata
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # 创建应用目录
 WORKDIR /app

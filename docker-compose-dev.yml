@@ -1,0 +1,43 @@
+# 开发环境 Docker Compose - 只启动用户服务
+# 不启动 Nacos/MySQL/Redis，使用云端服务
+
+services:
+  # 用户Provider服务
+  duda-user-provider:
+    image: duda/user-provider:1.0.0
+    build:
+      context: ./duda-usercenter/duda-user-provider
+      dockerfile: Dockerfile
+    container_name: duda-user-provider
+    ports:
+      - "8082:8082"
+      - "20882:20882"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms512m -Xmx512m
+    networks:
+      - duda-network
+    restart: unless-stopped
+
+  # 用户API服务
+  duda-user-api:
+    image: duda/user-api:1.0.0
+    build:
+      context: ./duda-usercenter/duda-user-api
+      dockerfile: Dockerfile
+    container_name: duda-user-api
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms512m -Xmx512m
+    networks:
+      - duda-network
+    depends_on:
+      - duda-user-provider
+    restart: unless-stopped
+
+networks:
+  duda-network:
+    driver: bridge
+    name: duda-network

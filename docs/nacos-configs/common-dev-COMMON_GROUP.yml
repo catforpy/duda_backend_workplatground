@@ -2,7 +2,7 @@
 # 所有服务共享的基础配置
 
 spring:
-  # Redis 配置
+  # Redis 配置（云服务器）
   data:
     redis:
       host: 120.26.170.213
@@ -17,7 +17,7 @@ spring:
           min-idle: 5
           max-wait: 2s
 
-  # RocketMQ 配置
+  # RocketMQ 配置（云服务器）
   rocketmq:
     name-server: 120.26.170.213:9876
     producer:
@@ -59,4 +59,4 @@ logging:
     com.alibaba.cloud.nacos: INFO
     org.springframework.cloud: INFO
   pattern:
-    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%logger{50}] %msg%n'
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%logger{50}]%msg%n'

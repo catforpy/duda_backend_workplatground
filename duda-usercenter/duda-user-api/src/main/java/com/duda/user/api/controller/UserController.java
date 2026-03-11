@@ -2,12 +2,17 @@ package com.duda.user.api.controller;
 
 import com.duda.common.domain.Result;
 import com.duda.common.domain.PageResult;
+import com.duda.common.security.dto.LoginResDTO;
+import com.duda.common.security.dto.RefreshTokenReqDTO;
+import com.duda.common.security.dto.TokenDTO;
+import com.duda.common.security.service.TokenService;
 import com.duda.user.dto.UserDTO;
 import com.duda.user.dto.UserLoginReqDTO;
 import com.duda.user.dto.UserRegisterReqDTO;
 import com.duda.user.rpc.IUserRpc;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.annotation.Resource;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,6 +36,9 @@ public class UserController {
     )
     private IUserRpc userRpc;
 
+    @Resource
+    private TokenService tokenService;
+
     /**
      * 用户注册
      */
@@ -42,13 +50,62 @@ public class UserController {
     }
 
     /**
-     * 用户登录
+     * 用户登录（返回Token）
      */
     @Operation(summary = "用户登录")
     @PostMapping("/login")
     public Result login(@RequestBody UserLoginReqDTO loginReq) {
+        // 1. 调用RPC登录验证
         UserDTO userDTO = userRpc.login(loginReq);
-        return Result.success(userDTO);
+
+        // 2. 生成Token
+        TokenDTO tokenDTO = tokenService.generateTokens(
+                userDTO.getId(),
+                userDTO.getUsername(),
+                userDTO.getUserType()
+        );
+
+        // 3. 组装登录响应
+        LoginResDTO loginRes = LoginResDTO.builder()
+                .userId(userDTO.getId())
+                .username(userDTO.getUsername())
+                .realName(userDTO.getRealName())
+                .userType(userDTO.getUserType())
+                .accessToken(tokenDTO.getAccessToken())
+                .refreshToken(tokenDTO.getRefreshToken())
+                .tokenType(tokenDTO.getTokenType())
+                .expiresIn(tokenDTO.getExpiresIn())
+                .lastLoginTime(userDTO.getLastLoginTime())
+                .build();
+
+        return Result.success(loginRes);
+    }
+
+    /**
+     * 刷新Token
+     */
+    @Operation(summary = "刷新Token")
+    @PostMapping("/refresh-token")
+    public Result refreshToken(@RequestBody RefreshTokenReqDTO reqDTO) {
+        TokenDTO tokenDTO = tokenService.refreshToken(reqDTO);
+        return Result.success(tokenDTO);
+    }
+
+    /**
+     * 用户登出
+     */
+    @Operation(summary = "用户登出")
+    @PostMapping("/logout")
+    public Result logout(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // 从Header中提取Token
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String accessToken = authHeader.substring(7);
+            Long userId = tokenService.getUserIdFromToken(accessToken);
+            if (userId != null) {
+                tokenService.logout(accessToken, userId);
+            }
+        }
+        return Result.success("登出成功");
     }
 
     /**

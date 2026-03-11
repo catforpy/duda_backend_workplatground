@@ -1,0 +1,25 @@
+# 用户 API 服务配置 - 开发环境
+
+# SpringDoc OpenAPI 配置
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+  show-actuator: false
+  default-consumes-media-type: application/json
+  default-produces-media-type: application/json
+
+# JWT配置
+jwt:
+  config:
+    secret: ${JWT_SECRET:duda-nexus-jwt-secret-key-2026-must-be-at-least-256-bits-long-for-hs256-algorithm}
+    access-token-expiration: 900  # 15分钟（秒）
+    refresh-token-expiration: 604800  # 7天（秒）
+    token-prefix: "Bearer "
+    header-key: "Authorization"
+    refresh-token-prefix: "auth:refresh:"
+    token-blacklist-prefix: "auth:blacklist:"

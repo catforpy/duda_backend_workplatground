@@ -1,0 +1,2 @@
+com.duda.common.security.config.JwtAutoConfiguration
+com.duda.common.security.config.TokenInterceptorConfig

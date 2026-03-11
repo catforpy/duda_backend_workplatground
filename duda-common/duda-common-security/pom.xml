@@ -16,6 +16,14 @@
             <artifactId>duda-common-core</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.duda</groupId>
+            <artifactId>duda-common-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.duda</groupId>
+            <artifactId>duda-common-web</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
         </dependency>

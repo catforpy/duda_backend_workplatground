@@ -1,46 +1,45 @@
+# Bootstrap 配置 - 用户服务
+
 server:
   port: 8082
 
 spring:
   application:
     name: duda-user-provider
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
   cloud:
     nacos:
-      server-addr: 120.26.170.213:8848
+      server-addr: ${NACOS_HOST:120.26.170.213}:${NACOS_PORT:8848}
       username: ${NACOS_USERNAME:nacos}
       password: ${NACOS_PASSWORD:nacos}
+
+      # 服务发现配置
       discovery:
         namespace: ${NACOS_NAMESPACE:duda-dev}
         group: USER_GROUP
         enabled: true
         register-enabled: true
-#      config:
-#        namespace: ${NACOS_NAMESPACE:duda-dev}
-#        group: USER_GROUP
-#        file-extension: yml
-#        shared-configs:
-#          - data-id: common-${spring.profiles.active:dev}.yml
-#            group: COMMON_GROUP
-#            refresh: true
+
+      # 配置中心配置
+      config:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: USER_GROUP
+        file-extension: yml
+        shared-configs:
+          # 从 Nacos 拉取公共配置（Redis、RocketMQ、MyBatis-Plus等）
+          - data-id: common-${spring.profiles.active:dev}.yml
+            group: COMMON_GROUP
+            refresh: true
+
+  # 云服务器数据库配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/duda_nexus?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://120.26.170.213:3306/duda_nexus?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8
     username: root
-    password: root
+    password: duda2024
     type: com.alibaba.druid.pool.DruidDataSource
-  # Redis配置
-  data:
-    redis:
-      host: 120.26.170.213
-      port: 6379
-      password: ${REDIS_PASSWORD:}
-      database: 0
-      lettuce:
-        pool:
-          max-active: 8
-          max-idle: 8
-          min-idle: 0
-          max-wait: -1ms
     druid:
       initial-size: 5
       min-idle: 5
@@ -61,30 +60,15 @@ dubbo:
     name: dubbo
     port: -1  # -1表示自动分配端口
   registry:
-    address: nacos://120.26.170.213:8848?username=nacos&password=nacos
+    address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
     parameters:
       namespace: ${NACOS_NAMESPACE:duda-dev}
       group: DEFAULT_GROUP
-      use-as-config-center: false  # 不作为配置中心
-      use-as-metadata-center: false  # 不作为元数据中心
+      use-as-config-center: false
+      use-as-metadata-center: false
   scan:
     base-packages: com.duda.user.rpc
   consumer:
-    check: false  # 启动时不检查服务提供者
+    check: false
     timeout: 5000
     retries: 2
-
-# MyBatis-Plus配置
-mybatis-plus:
-  mapper-locations: classpath*:/mapper/**/*.xml
-  type-aliases-package: com.duda.user.entity
-  configuration:
-    map-underscore-to-camel-case: true
-    cache-enabled: false
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-  global-config:
-    db-config:
-      id-type: ASSIGN_ID
-      logic-delete-field: deleted
-      logic-delete-value: 1
-      logic-not-delete-value: 0
