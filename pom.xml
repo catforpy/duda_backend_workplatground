@@ -15,6 +15,9 @@
     <url>https://www.duda.com</url>
 
     <modules>
+        <!-- 基础设施服务 -->
+        <module>duda-id-generator</module>
+
         <!-- 公共模块 -->
         <module>duda-common/duda-common-core</module>
         <module>duda-common/duda-common-web</module>

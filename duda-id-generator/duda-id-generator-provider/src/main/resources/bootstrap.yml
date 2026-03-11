@@ -1,0 +1,74 @@
+# Bootstrap 配置 - 雪花ID生成服务
+
+server:
+  port: 9090
+
+spring:
+  application:
+    name: duda-id-generator
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  cloud:
+    nacos:
+      server-addr: ${NACOS_HOST:120.26.170.213}:${NACOS_PORT:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+
+      # 服务发现配置
+      discovery:
+        server-addr: ${NACOS_HOST:120.26.170.213}:${NACOS_PORT:8848}
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: INFRA_GROUP  # 🔑 基础设施服务组
+        enabled: true
+        register-enabled: true
+
+      # 配置中心配置
+      config:
+        server-addr: ${NACOS_HOST:120.26.170.213}:${NACOS_PORT:8848}
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: INFRA_GROUP
+        file-extension: yml
+        shared-configs:
+          # 公共配置
+          - data-id: common-dev.yml
+            group: COMMON_GROUP
+            refresh: true
+
+# 雪花算法配置
+duda:
+  snowflake:
+    machine-id: ${SNOWFLAKE_MACHINE_ID:1}  # 机器ID，通过环境变量配置（0-31）
+
+# Dubbo配置
+dubbo:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    name: dubbo
+    port: -1  # 自动分配端口
+  registry:
+    address: nacos://${spring.cloud.nacos.discovery.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+    parameters:
+      namespace: ${NACOS_NAMESPACE:duda-dev}
+      group: DEFAULT_GROUP
+  scan:
+    base-packages: com.duda.id.rpc
+
+# Actuator配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      show-details: always
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.duda: DEBUG
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%logger{50}]%msg%n'
