@@ -56,7 +56,7 @@ public class UserPO {
     private String avatar;
 
     /**
-     * 用户类型: platform_admin-平台管理员, service_provider-服务商, platform_account-都达账户, backend_admin-后台管理员
+     * 用户类型: normal-普通用户, merchant-商家, operator-运营, admin-管理员
      */
     private String userType;
 
@@ -64,36 +64,6 @@ public class UserPO {
      * 状态: active-激活, inactive-未激活, suspended-暂停, deleted-已删除
      */
     private String status;
-
-    /**
-     * 所属公司ID
-     */
-    private Long companyId;
-
-    /**
-     * 部门
-     */
-    private String department;
-
-    /**
-     * 职位
-     */
-    private String position;
-
-    /**
-     * 省份
-     */
-    private String province;
-
-    /**
-     * 城市
-     */
-    private String city;
-
-    /**
-     * 详细地址
-     */
-    private String address;
 
     /**
      * 最后登录时间
