@@ -38,6 +38,15 @@ public class RedisUtils {
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
+    /**
+     * 获取 RedisTemplate（用于高级操作）
+     *
+     * @return RedisTemplate
+     */
+    public RedisTemplate<String, Object> getRedisTemplate() {
+        return redisTemplate;
+    }
+
     // ==================== 字符串操作 ====================
 
     /**
