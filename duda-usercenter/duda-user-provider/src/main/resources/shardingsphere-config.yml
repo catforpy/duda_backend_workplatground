@@ -1,0 +1,63 @@
+mode:
+  type: Standalone
+  repository:
+    type: JDBC
+
+dataSources:
+  # 主库（写）
+  master:
+    dataSourceClassName: com.alibaba.druid.pool.DruidDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://120.26.170.213:3306/duda_nexus?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8
+    username: root
+    password: duda2024
+    initialSize: 5
+    minIdle: 5
+    maxActive: 20
+    maxWait: 60000
+
+  # 从库（读）- 暂时指向同一个库，等你有从库后修改端口
+  slave:
+    dataSourceClassName: com.alibaba.druid.pool.DruidDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://120.26.170.213:3306/duda_nexus?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8
+    username: root
+    password: duda2024
+    initialSize: 5
+    minIdle: 5
+    maxActive: 20
+    maxWait: 60000
+
+rules:
+  # 读写分离规则
+  - !READWRITE_SPLITTING
+    dataSources:
+      readwrite_ds:
+        writeDataSourceName: master
+        readDataSourceNames:
+          - slave
+        loadBalancerName: round_robin
+
+    loadBalancers:
+      round_robin:
+        type: ROUND_ROBIN
+
+  # 分表规则
+  - !SHARDING
+    tables:
+      # users表分100张
+      users:
+        actualDataNodes: readwrite_ds.users_$->{['00'..'99']}
+        tableStrategy:
+          standard:
+            shardingColumn: id
+            shardingAlgorithmName: users_mod
+
+    shardingAlgorithms:
+      users_mod:
+        type: MOD
+        props:
+          sharding-count: 100
+
+props:
+  sql-show: true

@@ -51,7 +51,7 @@ dubbo:
     address: nacos://${spring.cloud.nacos.discovery.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
     parameters:
       namespace: ${NACOS_NAMESPACE:duda-dev}
-      group: INFRA_GROUP
+      group: DEFAULT_GROUP
   scan:
     base-packages: com.duda.id.rpc
   consumer:

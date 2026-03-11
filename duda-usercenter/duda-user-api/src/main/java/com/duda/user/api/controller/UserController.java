@@ -31,7 +31,7 @@ public class UserController {
 
     @DubboReference(
         version = "1.0.0",
-        group = "default",
+        group = "USER_GROUP",
         check = false  // 启动时不检查服务提供者
     )
     private IUserRpc userRpc;

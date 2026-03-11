@@ -33,7 +33,8 @@ spring:
             group: COMMON_GROUP
             refresh: true
 
-  # 云服务器数据库配置
+  # 云服务器数据库配置 - 主从分离 + 分表
+  # 暂时使用单库，先测试RPC调用
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://120.26.170.213:3306/duda_nexus?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8
@@ -59,13 +60,29 @@ dubbo:
   protocol:
     name: dubbo
     port: -1  # -1表示自动分配端口
-  registry:
-    address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
-    parameters:
-      namespace: ${NACOS_NAMESPACE:duda-dev}
-      group: DEFAULT_GROUP
-      use-as-config-center: false
-      use-as-metadata-center: false
+
+  # 配置多个 Registry
+  registries:
+    # Registry 1: 基础设施服务（INFRA_GROUP）- 用于调用ID生成器
+    infraRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: INFRA_GROUP
+        use-as-config-center: false
+        use-as-metadata-center: false
+      default: false  # 不是默认 registry
+
+    # Registry 2: 业务服务（USER_GROUP）- 默认 registry
+    userRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: USER_GROUP
+        use-as-config-center: false
+        use-as-metadata-center: false
+      default: true  # 默认 registry
+
   scan:
     base-packages: com.duda.user.rpc
   consumer:

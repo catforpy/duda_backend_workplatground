@@ -8,7 +8,7 @@ import com.duda.common.domain.PageResult;
 import com.duda.common.web.exception.BizException;
 import com.duda.common.redis.RedisUtils;
 import com.duda.common.util.BeanCopyUtils;
-import com.duda.common.util.IdGenerator;
+import com.duda.id.api.IdGeneratorRpc;
 import com.duda.user.dto.UserDTO;
 import com.duda.user.dto.UserLoginReqDTO;
 import com.duda.user.dto.UserRegisterReqDTO;
@@ -17,6 +17,7 @@ import com.duda.user.mapper.UserMapper;
 import com.duda.common.redis.key.UserRedisKeyBuilder;
 import com.duda.user.service.UserService;
 import jakarta.annotation.Resource;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -46,6 +47,13 @@ public class UserServiceImpl implements UserService {
     @Resource
     private UserRedisKeyBuilder redisKeyBuilder;
 
+    @DubboReference(
+        group = "INFRA_GROUP",
+        version = "1.0.0",
+        registry = "infraRegistry"  // ← 指定使用 infraRegistry
+    )
+    private IdGeneratorRpc idGeneratorRpc;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long register(UserRegisterReqDTO registerReq) {
@@ -69,7 +77,7 @@ public class UserServiceImpl implements UserService {
 
         // 3. 创建用户
         UserPO userPO = new UserPO();
-        userPO.setId(IdGenerator.nextId()); // 使用雪花算法生成ID
+        userPO.setId(idGeneratorRpc.generateUserId()); // 调用RPC生成雪花ID
         userPO.setUserType(registerReq.getUserType());
         userPO.setUsername(registerReq.getUsername());
         userPO.setPassword(BCrypt.hashpw(registerReq.getPassword())); // BCrypt加密

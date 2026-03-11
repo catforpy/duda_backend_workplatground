@@ -18,7 +18,7 @@ import org.apache.dubbo.config.annotation.DubboService;
  */
 @DubboService(
     version = "1.0.0",
-    group = "default",
+    group = "USER_GROUP",
     timeout = 5000
 )
 public class UserRpcImpl implements IUserRpc {

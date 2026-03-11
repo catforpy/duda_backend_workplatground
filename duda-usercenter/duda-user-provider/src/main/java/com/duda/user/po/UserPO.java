@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
  * @since 2026-03-10
  */
 @Data
-@TableName("users")
+@TableName("users_00")  // 临时配置，测试RPC调用；分表配置完成后改回 "users"
 public class UserPO {
 
     /**

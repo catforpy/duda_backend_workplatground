@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
  */
 @DubboService(
     version = "1.0.0",
+    group = "INFRA_GROUP",
     timeout = 5000,
     retries = 0
 )
