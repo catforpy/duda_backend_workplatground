@@ -12,6 +12,8 @@ import com.duda.id.api.IdGeneratorRpc;
 import com.duda.user.dto.UserDTO;
 import com.duda.user.dto.UserLoginReqDTO;
 import com.duda.user.dto.UserRegisterReqDTO;
+import com.duda.user.entity.UserAccount;
+import com.duda.user.mapper.UserAccountMapper;
 import com.duda.user.po.UserPO;
 import com.duda.user.mapper.UserMapper;
 import com.duda.common.redis.key.UserRedisKeyBuilder;
@@ -42,6 +44,9 @@ public class UserServiceImpl implements UserService {
     private UserMapper userMapper;
 
     @Resource
+    private UserAccountMapper userAccountMapper;
+
+    @Resource
     private RedisUtils redisUtils;
 
     @Resource
@@ -59,41 +64,54 @@ public class UserServiceImpl implements UserService {
     public Long register(UserRegisterReqDTO registerReq) {
         logger.info("用户注册，用户名:{}", registerReq.getUsername());
 
-        // 1. 检查用户名是否已存在
-        LambdaQueryWrapper<UserPO> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(UserPO::getUsername, registerReq.getUsername());
-        Long count = userMapper.selectCount(wrapper);
-        if (count > 0) {
+        // 1. 检查用户名是否已存在（在 user_accounts 表）
+        boolean usernameExists = userAccountMapper.existsByLoginTypeAndAccount("username", registerReq.getUsername());
+        if (usernameExists) {
             throw new BizException("用户名已存在");
         }
 
-        // 2. 检查手机号是否已存在
-        wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(UserPO::getPhone, registerReq.getPhone());
-        count = userMapper.selectCount(wrapper);
-        if (count > 0) {
-            throw new BizException("手机号已被注册");
+        // 2. 检查手机号是否已存在（在 user_accounts 表）
+        if (StringUtils.hasText(registerReq.getPhone())) {
+            boolean phoneExists = userAccountMapper.existsByLoginTypeAndAccount("phone", registerReq.getPhone());
+            if (phoneExists) {
+                throw new BizException("手机号已被注册");
+            }
         }
 
-        // 3. 创建用户
+        // 3. 创建用户（users 表）
+        String hashedPassword = BCrypt.hashpw(registerReq.getPassword()); // BCrypt加密
+        Long userId = idGeneratorRpc.generateUserId(); // 调用RPC生成雪花ID
         UserPO userPO = new UserPO();
-        userPO.setId(idGeneratorRpc.generateUserId()); // 调用RPC生成雪花ID
+        userPO.setId(userId);
         userPO.setUserType(registerReq.getUserType());
-        userPO.setUsername(registerReq.getUsername());
-        userPO.setPassword(BCrypt.hashpw(registerReq.getPassword())); // BCrypt加密
+        userPO.setUsername(registerReq.getUsername()); // 兼容旧字段，用于数据迁移兼容
+        userPO.setPassword(hashedPassword); // 兼容旧字段，保持数据一致性
         userPO.setRealName(registerReq.getRealName());
-        userPO.setPhone(registerReq.getPhone());
-        userPO.setEmail(registerReq.getEmail());
         userPO.setStatus("inactive"); // 默认未激活
         userPO.setDeleted(0); // 未删除
 
-        // 4. 保存到数据库
+        // 4. 创建登录账号（user_accounts 表）
+        UserAccount userAccount = new UserAccount();
+        userAccount.setUserId(userId);
+        userAccount.setUserShard(0); // TODO: 根据userId计算分片
+        userAccount.setLoginType("username"); // 目前只支持username注册
+        userAccount.setLoginAccount(registerReq.getUsername());
+        userAccount.setPassword(hashedPassword); // 使用相同的加密密码
+        userAccount.setVerified(true); // 用户名登录默认已验证
+        userAccount.setIsPrimary(true); // 第一个登录方式为主账号
+        userAccount.setStatus("active");
+
+        // 5. 保存到数据库（先保存users，再保存user_accounts）
         int result = userMapper.insert(userPO);
         if (result <= 0) {
             throw new BizException("注册失败");
         }
 
-        logger.info("用户注册成功，userId:{}, username:{}", userPO.getId(), userPO.getUsername());
+        // 6. 保存登录账号
+        // 注意：user_accounts 表的 id 是自增的，不需要设置
+        userAccountMapper.insert(userAccount);
+
+        logger.info("用户注册成功，userId:{}, username:{}", userPO.getId(), registerReq.getUsername());
         return userPO.getId();
     }
 
@@ -101,22 +119,32 @@ public class UserServiceImpl implements UserService {
     public UserDTO login(UserLoginReqDTO loginReq) {
         logger.info("用户登录，用户名:{}", loginReq.getUsername());
 
-        // 1. 查询用户
-        LambdaQueryWrapper<UserPO> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(UserPO::getUsername, loginReq.getUsername());
-        UserPO userPO = userMapper.selectOne(wrapper);
+        // 1. 从 user_accounts 表查询登录账号
+        UserAccount userAccount = userAccountMapper.selectByLoginTypeAndAccount("username", loginReq.getUsername());
 
-        if (userPO == null) {
+        if (userAccount == null) {
             throw new BizException("用户名或密码错误");
         }
 
-        // 2. 验证密码
-        boolean passwordMatch = BCrypt.checkpw(loginReq.getPassword(), userPO.getPassword());
+        // 2. 根据 user_id 查询用户信息
+        LambdaQueryWrapper<UserPO> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserPO::getId, userAccount.getUserId());
+        UserPO userPO = userMapper.selectOne(wrapper);
+
+        if (userPO == null) {
+            throw new BizException("用户信息不存在");
+        }
+
+        // 3. 验证密码（从 user_account 表）
+        boolean passwordMatch = BCrypt.checkpw(loginReq.getPassword(), userAccount.getPassword());
+        if (!passwordMatch) {
+            throw new BizException("用户名或密码错误");
+        }
         if (!passwordMatch) {
             throw new BizException("用户名或密码错误");
         }
 
-        // 3. 检查账户状态
+        // 4. 检查账户状态
         if ("frozen".equals(userPO.getStatus())) {
             throw new BizException("账户已冻结");
         }
@@ -124,22 +152,22 @@ public class UserServiceImpl implements UserService {
             throw new BizException("账户已删除");
         }
 
-        // 4. 更新最后登录时间和IP
+        // 5. 更新最后登录时间和IP
         userPO.setLastLoginTime(LocalDateTime.now());
         userPO.setLastLoginIp(getClientIp()); // TODO: 从请求中获取真实IP
         userMapper.updateById(userPO);
 
-        // 5. 转换为DTO并返回
+        // 6. 转换为DTO并返回
         UserDTO userDTO = BeanCopyUtils.copy(userPO, UserDTO.class);
 
-        // 6. 激活状态（首次登录自动激活）
+        // 7. 激活状态（首次登录自动激活）
         if ("inactive".equals(userPO.getStatus())) {
             userPO.setStatus("active");
             userMapper.updateById(userPO);
             userDTO.setStatus("active");
         }
 
-        logger.info("用户登录成功，userId:{}, username:{}", userPO.getId(), userPO.getUsername());
+        logger.info("用户登录成功，userId:{}, username:{}", userPO.getId(), loginReq.getUsername());
         return userDTO;
     }
 
