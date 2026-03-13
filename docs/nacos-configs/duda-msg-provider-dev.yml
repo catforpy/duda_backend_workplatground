@@ -1,0 +1,65 @@
+# 短信服务提供者配置 - 开发环境
+
+# 服务端口
+server:
+  port: 20882
+
+# Spring配置
+spring:
+  application:
+    name: duda-msg-provider
+
+  # Redis配置
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password:
+      database: 0
+      timeout: 5000
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1
+          max-idle: 8
+          min-idle: 0
+
+# Dubbo配置
+dubbo:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    name: dubbo
+    port: -1
+  registry:
+    address: nacos://120.26.170.213:8848
+    parameters:
+      namespace: duda-dev
+      group: MSG_GROUP
+  scan:
+    base-packages: com.duda.msg.provider.rpc
+
+# 短信服务配置
+duda:
+  sms:
+    # ⭐ 开关：开发环境false，生产环境true
+    real-send: false
+    # 短信服务商配置（容联云）
+    server-ip: app.cloopen.com
+    port: 8883
+    account-id: 8a216da87e38cae7017e5e07fb36045e
+    account-token: 5c1b9f0e29a649e8a7b88c8d6d843c57
+    app-id: 8a216da87e38cae7017e5e07fc4f0466
+    # 测试手机号（开发环境用）
+    test-phone: 13800138000
+    # 验证码配置
+    code-expire-seconds: 60  # 60秒过期
+    code-length: 4  # 4位验证码
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.duda.msg: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

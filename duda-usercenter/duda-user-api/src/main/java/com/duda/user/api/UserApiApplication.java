@@ -13,7 +13,16 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  */
 @EnableDubbo
 @EnableDiscoveryClient
-@SpringBootApplication(scanBasePackages = {"com.duda.user.api", "com.duda.common"})
+@SpringBootApplication(scanBasePackages = {
+    "com.duda.user.api",
+    "com.duda.common.security",
+    "com.duda.common.domain",
+    "com.duda.common.dto",
+    "com.duda.common.enums",
+    "com.duda.common.utils",
+    "com.duda.common.exception",
+    "com.duda.common.config"
+})
 public class UserApiApplication {
 
     public static void main(String[] args) {

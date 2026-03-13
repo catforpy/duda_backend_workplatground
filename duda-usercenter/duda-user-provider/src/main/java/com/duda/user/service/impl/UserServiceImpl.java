@@ -8,6 +8,10 @@ import com.duda.common.domain.PageResult;
 import com.duda.common.web.exception.BizException;
 import com.duda.common.redis.RedisUtils;
 import com.duda.common.util.BeanCopyUtils;
+import com.duda.common.mq.MqTopicConstants;
+import com.duda.common.mq.message.UserRegisterMsg;
+import com.duda.common.mq.message.UserCacheMsg;
+import com.duda.common.rocketmq.RocketMQUtils;
 import com.duda.id.api.IdGeneratorRpc;
 import com.duda.user.dto.UserDTO;
 import com.duda.user.dto.UserLoginReqDTO;
@@ -51,6 +55,9 @@ public class UserServiceImpl implements UserService {
 
     @Resource
     private UserRedisKeyBuilder redisKeyBuilder;
+
+    @Resource
+    private RocketMQUtils rocketMQUtils;
 
     @DubboReference(
         group = "INFRA_GROUP",
@@ -110,6 +117,30 @@ public class UserServiceImpl implements UserService {
         // 6. 保存登录账号
         // 注意：user_accounts 表的 id 是自增的，不需要设置
         userAccountMapper.insert(userAccount);
+
+        // 7. 发送 MQ 消息（异步处理：欢迎邮件、初始化数据等）
+        try {
+            UserRegisterMsg registerMsg = new UserRegisterMsg();
+            registerMsg.setUserId(userPO.getId());
+            registerMsg.setUsername(registerReq.getUsername());
+            registerMsg.setUserType(registerReq.getUserType());
+            registerMsg.setRealName(registerReq.getRealName());
+            registerMsg.setPhone(registerReq.getPhone());
+            registerMsg.setRegisterTime(LocalDateTime.now().toString());
+            registerMsg.setRegisterIp(getClientIp());
+            registerMsg.setRegisterType("account");
+
+            rocketMQUtils.asyncSendWithKey(
+                MqTopicConstants.USER_REGISTER,
+                registerMsg,
+                RocketMQUtils.buildMessageKey("user-register", userPO.getId())
+            );
+
+            logger.info("✅ 用户注册成功，userId:{}, 已发送注册MQ消息", userPO.getId());
+        } catch (Exception e) {
+            logger.error("❌ 发送注册MQ消息失败，userId:{}", userPO.getId(), e);
+            // 不影响注册流程，继续执行
+        }
 
         logger.info("用户注册成功，userId:{}, username:{}", userPO.getId(), registerReq.getUsername());
         return userPO.getId();
@@ -230,6 +261,25 @@ public class UserServiceImpl implements UserService {
         // 4. 清除缓存
         String cacheKey = redisKeyBuilder.buildUserInfoKey(userDTO.getId());
         redisUtils.delete(cacheKey);
+
+        // 5. 发送 MQ 消息（通知其他服务清除缓存）
+        try {
+            UserCacheMsg cacheMsg = new UserCacheMsg();
+            cacheMsg.setUserId(userDTO.getId());
+            cacheMsg.setOperation("update");
+            cacheMsg.setChangeTime(LocalDateTime.now().toString());
+            cacheMsg.setReason("profile_update");
+
+            rocketMQUtils.asyncSendWithKey(
+                MqTopicConstants.USER_CACHE_ASYNC_DELETE,
+                cacheMsg,
+                RocketMQUtils.buildMessageKey("user-cache-update", userDTO.getId())
+            );
+
+            logger.info("✅ 用户信息更新成功，userId:{}, 已发送缓存变更MQ消息", userDTO.getId());
+        } catch (Exception e) {
+            logger.error("❌ 发送缓存变更MQ消息失败，userId:{}", userDTO.getId(), e);
+        }
 
         return result > 0;
     }

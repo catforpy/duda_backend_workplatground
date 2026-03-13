@@ -1,95 +1,109 @@
 package com.duda.common.dto.auth;
 
-import com.duda.common.enums.LoginType;
-import com.duda.common.enums.UserType;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 /**
  * 登录请求DTO
  *
  * 支持3种登录方式：
- * 1. 手机号+密码
- * 2. 邮箱+密码
- * 3. 第三方登录
+ * 1. 都达网账号登录：username + password
+ * 2. 手机号验证码登录：phone + phoneVerifyCode（无密码）
+ * 3. 微信扫码登录：微信授权信息
  *
  * @author DudaNexus
- * @since 2026-03-11
+ * @since 2026-03-12
  */
 @Data
 @Schema(description = "登录请求")
 public class LoginRequestDTO {
 
+    // ==================== 通用必填字段 ====================
+
     /**
      * 登录方式
      * 必填
+     * - account_password：都达网账号登录（username + password）
+     * - phone_sms：手机号验证码登录（phone + phoneVerifyCode）
+     * - wechat_scan：微信扫码登录
      */
-    @Schema(description = "登录方式：phone_password-手机号密码, email_password-邮箱密码, third_party-第三方登录",
+    @Schema(description = "登录方式：account_password-都达网账号, phone_sms-手机号验证码, wechat_scan-微信扫码",
             required = true,
-            example = "phone_password")
+            example = "account_password",
+            allowableValues = {"account_password", "phone_sms", "wechat_scan"})
     @NotBlank(message = "登录方式不能为空")
     private String loginType;
 
     /**
-     * 用户类型
-     * 可选，用于区分不同身份的用户登录
+     * 用户类型（可选，用于区分不同身份的用户）
      */
     @Schema(description = "用户类型：normal-普通用户, merchant-商家, operator-运营, admin-管理员",
             example = "normal")
     private String userType;
 
+    // ==================== 方式1：都达网账号登录字段 ====================
+
+    /**
+     * 用户名
+     * loginType=account_password 时必填
+     */
+    @Schema(description = "用户名", example = "johndoe")
+    private String username;
+
+    /**
+     * 密码
+     * loginType=account_password 时必填
+     */
+    @Schema(description = "密码", example = "pass123456")
+    private String password;
+
+    // ==================== 方式2：手机号验证码登录字段 ====================
+
     /**
      * 手机号
-     * login_type=phone_password 时必填
+     * loginType=phone_sms 时必填
      */
     @Schema(description = "手机号", example = "13800138000")
     @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
     private String phone;
 
     /**
-     * 邮箱
-     * login_type=email_password 时必填
+     * 手机验证码
+     * loginType=phone_sms 时必填
      */
-    @Schema(description = "邮箱", example = "user@example.com")
-    @Email(message = "邮箱格式不正确")
-    private String email;
+    @Schema(description = "手机验证码", example = "1234")
+    @Pattern(regexp = "^\\d{4}$", message = "验证码格式不正确")
+    private String phoneVerifyCode;
 
-    /**
-     * 密码
-     * login_type=phone_password 或 email_password 时必填
-     */
-    @Schema(description = "密码", example = "password123")
-    private String password;
+    // ==================== 方式3：微信扫码登录字段 ====================
 
     /**
      * 第三方平台
-     * login_type=third_party 时必填
+     * loginType=wechat_scan 时必填
      */
-    @Schema(description = "第三方平台：wechat-微信, qq-QQ, alipay-支付宝, weibo-微博",
-            example = "wechat")
+    @Schema(description = "第三方平台：wechat-微信", example = "wechat")
     private String thirdPartyPlatform;
 
     /**
-     * 第三方授权码
-     * login_type=third_party 时必填
-     */
-    @Schema(description = "第三方授权码（access_token或auth_code）", example = "auth_code_xxx")
-    @NotBlank(message = "第三方授权码不能为空")
-    private String thirdPartyAuthCode;
-
-    /**
      * 第三方OpenID
-     * login_type=third_party 时可选，用于绑定已存在的账号
+     * loginType=wechat_scan 时必填
      */
-    @Schema(description = "第三方OpenID", example = "oXXXXXXXXXXXXXXXX")
+    @Schema(description = "微信OpenID", example = "oXXXXXXXXXXXXXXXX")
     private String thirdPartyOpenId;
 
     /**
+     * 第三方UnionID
+     */
+    @Schema(description = "微信UnionID", example = "uXXXXXXXXXXXXXXXX")
+    private String thirdPartyUnionId;
+
+    // ==================== 可选字段 ====================
+
+    /**
      * 客户端IP
-     * 系统自动获取
      */
     @Schema(description = "客户端IP", example = "192.168.1.1")
     private String clientIp;
@@ -111,51 +125,33 @@ public class LoginRequestDTO {
      * 验证登录参数是否完整
      */
     public void validate() {
-        LoginType type = LoginType.fromCode(this.loginType);
-
-        switch (type) {
-            case PHONE_PASSWORD:
-                if (phone == null || phone.isBlank()) {
-                    throw new IllegalArgumentException("手机号不能为空");
-                }
-                if (password == null || password.isBlank()) {
-                    throw new IllegalArgumentException("密码不能为空");
-                }
-                break;
-
-            case EMAIL_PASSWORD:
-                if (email == null || email.isBlank()) {
-                    throw new IllegalArgumentException("邮箱不能为空");
-                }
-                if (password == null || password.isBlank()) {
-                    throw new IllegalArgumentException("密码不能为空");
-                }
-                break;
-
-            case THIRD_PARTY:
-                if (thirdPartyPlatform == null || thirdPartyPlatform.isBlank()) {
-                    throw new IllegalArgumentException("第三方平台不能为空");
-                }
-                if (thirdPartyAuthCode == null || thirdPartyAuthCode.isBlank()) {
-                    throw new IllegalArgumentException("第三方授权码不能为空");
-                }
-                break;
-
-            default:
-                throw new IllegalArgumentException("不支持的登录方式: " + type);
+        // 根据登录方式验证必填字段
+        if ("account_password".equals(loginType)) {
+            // 都达网账号登录
+            if (username == null || username.isBlank()) {
+                throw new IllegalArgumentException("用户名不能为空");
+            }
+            if (password == null || password.isBlank()) {
+                throw new IllegalArgumentException("密码不能为空");
+            }
+        } else if ("phone_sms".equals(loginType)) {
+            // 手机号验证码登录
+            if (phone == null || phone.isBlank()) {
+                throw new IllegalArgumentException("手机号不能为空");
+            }
+            if (phoneVerifyCode == null || phoneVerifyCode.isBlank()) {
+                throw new IllegalArgumentException("手机验证码不能为空");
+            }
+        } else if ("wechat_scan".equals(loginType)) {
+            // 微信扫码登录
+            if (thirdPartyPlatform == null || thirdPartyPlatform.isBlank()) {
+                throw new IllegalArgumentException("第三方平台不能为空");
+            }
+            if (thirdPartyOpenId == null || thirdPartyOpenId.isBlank()) {
+                throw new IllegalArgumentException("微信OpenID不能为空");
+            }
+        } else {
+            throw new IllegalArgumentException("不支持的登录方式: " + loginType);
         }
-    }
-
-    /**
-     * 获取登录账号（手机号或邮箱）
-     */
-    public String getAccount() {
-        LoginType type = LoginType.fromCode(this.loginType);
-        if (type == LoginType.PHONE_PASSWORD) {
-            return phone;
-        } else if (type == LoginType.EMAIL_PASSWORD) {
-            return email;
-        }
-        return null;
     }
 }

@@ -75,6 +75,16 @@
             <groupId>com.duda</groupId>
             <artifactId>duda-common-redis</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.duda</groupId>
+            <artifactId>duda-common-rocketmq</artifactId>
+        </dependency>
+
+        <!-- ✅ 健康检查（Actuator） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
 
         <!-- Spring Boot Web -->
         <dependency>
@@ -154,6 +164,28 @@
                     <execution>
                         <goals>
                             <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Maven AntRun Plugin - 在 package 阶段复制 jar 包到项目根目录 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <configuration>
+                            <target>
+                                <copy todir="${project.basedir}"
+                                      file="target/${project.build.finalName}.jar"
+                                      overwrite="true"/>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
                         </goals>
                     </execution>
                 </executions>

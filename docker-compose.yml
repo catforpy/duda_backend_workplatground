@@ -1,83 +1,56 @@
 # DudaNexus 微服务 Docker Compose 配置
 # 使用方法: docker-compose up -d
 
-version: '3.8'
-
 services:
   # ==========================
-  # 基础设施服务（用于本地测试）
+  # 基础设施服务 (INFRA_GROUP)
   # ==========================
 
-  # MySQL数据库
-  mysql:
-    image: mysql:8.0
-    container_name: duda-mysql
+  # ID生成器服务 - 必须最先启动
+  duda-id-generator:
+    image: duda/id-generator-provider:1.0.0
+    container_name: duda-id-generator
     ports:
-      - "3306:3306"
+      - "9090:9090"
     environment:
-      MYSQL_ROOT_PASSWORD: Duda@2025
-      MYSQL_DATABASE: duda_nexus
-      TZ: Asia/Shanghai
-    volumes:
-      - mysql-data:/var/lib/mysql
-      - ./sql:/docker-entrypoint-initdb.d
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --default-authentication-plugin=mysql_native_password
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms256m -Xmx256m
+      - SNOWFLAKE_MACHINE_ID=1
     networks:
       - duda-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pDuda@2025"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Redis
-  redis:
-    image: redis:7-alpine
-    container_name: duda-redis
-    ports:
-      - "6379:6379"
-    command: redis-server --requirepass Duda@2025
-    volumes:
-      - redis-data:/data
-    networks:
-      - duda-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Nacos
-  nacos:
-    image: nacos/nacos-server:v2.2.3
-    container_name: duda-nacos
-    ports:
-      - "8848:8848"
-      - "9848:9848"
-    environment:
-      MODE: standalone
-      JVM_XMS: 512m
-      JVM_XMX: 512m
-      NACOS_AUTH_ENABLE: false
-      TZ: Asia/Shanghai
-    volumes:
-      - nacos-data:/home/nacos/data
-    networks:
-      - duda-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
 
   # ==========================
   # 业务微服务
   # ==========================
 
-  # 用户Provider服务
+  # 消息服务 (MSG_GROUP)
+  duda-msg-provider:
+    image: duda/msg-provider:1.0.0
+    container_name: duda-msg-provider
+    ports:
+      - "9091:9091"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms256m -Xmx256m
+      - SPRING_CLOUD_NACOS_CONFIG_IMPORT_CHECK_ENABLED=false
+    networks:
+      - duda-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9091/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # 用户Provider服务 (USER_GROUP)
   duda-user-provider:
     image: duda/user-provider:1.0.0
     build:
@@ -86,7 +59,7 @@ services:
     container_name: duda-user-provider
     ports:
       - "8082:8082"
-      - "20882:20882"
+      - "20880:20880"
     environment:
       - SPRING_PROFILES_ACTIVE=dev
       - JAVA_OPTS=-Xms512m -Xmx512m
@@ -95,11 +68,7 @@ services:
     networks:
       - duda-network
     depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      nacos:
+      duda-id-generator:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
@@ -117,7 +86,7 @@ services:
       dockerfile: Dockerfile
     container_name: duda-user-api
     ports:
-      - "8081:8081"
+      - "8083:8083"
     environment:
       - SPRING_PROFILES_ACTIVE=dev
       - JAVA_OPTS=-Xms512m -Xmx512m
@@ -128,7 +97,7 @@ services:
     depends_on:
       - duda-user-provider
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -140,12 +109,3 @@ networks:
   duda-network:
     driver: bridge
     name: duda-network
-
-# 卷配置（可选，用于持久化数据）
-volumes:
-  duda-auth-logs:
-    driver: local
-  duda-user-logs:
-    driver: local
-  duda-gateway-logs:
-    driver: local

@@ -45,6 +45,11 @@ public class UserDTO implements Serializable {
     private String email;
 
     /**
+     * 头像URL
+     */
+    private String avatar;
+
+    /**
      * 账户状态
      */
     private String status;

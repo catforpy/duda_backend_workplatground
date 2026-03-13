@@ -65,3 +65,16 @@ HELP.md
 # Backup files
 *.backup
 *.bak
+
+# Maven 编译产物（JAR文件）
+*.jar
+*.war
+*.ear
+target/
+
+# Docker 构建时复制的 JAR
+duda-*/duda-*/*.jar
+duda-*/duda-*/*.jar.original
+
+# Docker 相关
+docker-compose.override.yml

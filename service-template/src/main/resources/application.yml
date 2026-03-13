@@ -1,0 +1,56 @@
+# DudaNexus 服务标准配置
+# 此文件由 service-template 提供，所有新服务默认包含
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ${SERVICE_NAME:duda-service}
+
+# ✅ 健康检查配置（Actuator）
+management:
+  endpoints:
+    web:
+      exposure:
+        # 暴露的端点：health, info, metrics, prometheus
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      # 显示详细健康信息
+      show-details: when-authorized
+      # 显示组件详情
+      show-components: always
+  # 健康指示器
+  health:
+    defaults:
+      enabled: true
+    db:
+      enabled: true
+    redis:
+      enabled: true
+    diskspace:
+      enabled: true
+  # 指标配置
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.duda: DEBUG
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
+
+# 应用信息
+info:
+  app:
+    name: ${spring.application.name}
+    description: DudaNexus Microservice
+    version: 1.0.0

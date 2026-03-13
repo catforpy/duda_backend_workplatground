@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.cache.support.NullValue;
 import org.springframework.util.StringUtils;
 
@@ -36,6 +37,9 @@ public class MapperFactory {
      * @return 配置好的ObjectMapper
      */
     private static ObjectMapper initMapper(ObjectMapper mapper, String classPropertyTypeName) {
+        // 注册JavaTimeModule，支持Java 8日期时间类型（LocalDateTime等）
+        mapper.registerModule(new JavaTimeModule());
+
         // 注册自定义模块，添加空值序列化器
         mapper.registerModule(new SimpleModule().addSerializer(new MapperNullValueSerializer(classPropertyTypeName)));
 

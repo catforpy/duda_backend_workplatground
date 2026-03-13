@@ -18,6 +18,36 @@
 
 ---
 
+## 🚀 快速开始
+
+### ⚡ 一键启动（推荐）
+
+**📖 必读**: [项目运行日志](PROJECT_LOG.md) - 包含完整的启动指南、配置说明和故障排查
+
+```bash
+cd /Volumes/DudaDate/DudaNexus
+docker-compose up -d
+```
+
+### 🌐 访问地址
+
+- **Swagger UI**: http://localhost:8083/swagger-ui/index.html
+- **健康检查**: http://localhost:8083/actuator/health
+- **Nacos 控制台**: http://120.26.170.213:8848/nacos (nacos/nacos)
+
+### 📋 当前服务状态
+
+| 服务 | 端口 | 状态 | 说明 |
+|------|------|------|------|
+| duda-id-generator | 9090 | ✅ 运行中 | ID生成器 (INFRA_GROUP) |
+| duda-msg-provider | 9091 | ✅ 运行中 | 消息服务 (MSG_GROUP) |
+| duda-user-provider | 8082 | ✅ 运行中 | 用户服务 (USER_GROUP) |
+| duda-user-api | 8083 | ✅ 运行中 | 用户API (36个接口) |
+
+**完整信息请查看**: [📚 PROJECT_LOG.md](PROJECT_LOG.md)
+
+---
+
 ## 项目简介
 
 DudaNexus（都达云台）是基于 Spring Cloud 技术栈构建的企业级微服务平台，采用**接口-实现分离**架构，为都达网络科技有限公司提供统一的技术底座，支撑多端应用（Web、App、小程序）的业务需求。

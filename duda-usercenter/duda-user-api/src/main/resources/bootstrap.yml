@@ -55,3 +55,25 @@ dubbo:
     check: false
     timeout: 5000
     retries: 2
+
+# RocketMQ 配置
+rocketmq:
+  name-server: ${ROCKETMQ_HOST:120.26.170.213}:${ROCKETMQ_PORT:9876}
+  producer:
+    group: user-api-producer-group
+    send-message-timeout: 3000
+    retry-times-when-send-failed: 2
+
+# ✅ 健康检查配置（Actuator）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: always
+  health:
+    defaults:
+      enabled: true
