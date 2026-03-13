@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.SensitiveDataScanRecordMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.SensitiveDataScanRecord">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="task_id" property="taskId" jdbcType="VARCHAR"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="scan_prefix" property="scanPrefix" jdbcType="VARCHAR"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="total_files" property="totalFiles" jdbcType="BIGINT"/>
+        <result column="scanned_files" property="scannedFiles" jdbcType="BIGINT"/>
+        <result column="sensitive_files_found" property="sensitiveFilesFound" jdbcType="BIGINT"/>
+        <result column="total_scan_size" property="totalScanSize" jdbcType="BIGINT"/>
+        <result column="sensitive_data_types" property="sensitiveDataTypes" jdbcType="VARCHAR"/>
+        <result column="start_time" property="startTime" jdbcType="TIMESTAMP"/>
+        <result column="end_time" property="endTime" jdbcType="TIMESTAMP"/>
+        <result column="duration_seconds" property="durationSeconds" jdbcType="BIGINT"/>
+        <result column="error_message" property="errorMessage" jdbcType="VARCHAR"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, task_id, bucket_name, scan_prefix, status, total_files, scanned_files,
+        sensitive_files_found, total_scan_size, sensitive_data_types, start_time,
+        end_time, duration_seconds, error_message, created_time, updated_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_scan_record
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据任务ID查询 -->
+    <select id="selectByTaskId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_scan_record
+        WHERE task_id = #{taskId}
+    </select>
+
+    <!-- 根据Bucket名称查询扫描记录 -->
+    <select id="selectByBucketName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_scan_record
+        WHERE bucket_name = #{bucketName}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 根据状态查询扫描记录 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_scan_record
+        WHERE status = #{status}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 查询发现敏感数据的记录 -->
+    <select id="selectSensitiveDataFound" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_scan_record
+        WHERE sensitive_files_found &gt;= #{minCount}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 插入扫描记录 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.SensitiveDataScanRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sensitive_data_scan_record (
+            task_id, bucket_name, scan_prefix, status, total_files, scanned_files,
+            sensitive_files_found, total_scan_size, sensitive_data_types, start_time,
+            end_time, duration_seconds, error_message
+        ) VALUES (
+            #{taskId}, #{bucketName}, #{scanPrefix}, #{status}, #{totalFiles}, #{scannedFiles},
+            #{sensitiveFilesFound}, #{totalScanSize}, #{sensitiveDataTypes}, #{startTime},
+            #{endTime}, #{durationSeconds}, #{errorMessage}
+        )
+    </insert>
+
+    <!-- 更新扫描记录 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.SensitiveDataScanRecord">
+        UPDATE sensitive_data_scan_record
+        <set>
+            <if test="status != null">status = #{status},</if>
+            <if test="totalFiles != null">total_files = #{totalFiles},</if>
+            <if test="scannedFiles != null">scanned_files = #{scannedFiles},</if>
+            <if test="sensitiveFilesFound != null">sensitive_files_found = #{sensitiveFilesFound},</if>
+            <if test="totalScanSize != null">total_scan_size = #{totalScanSize},</if>
+            <if test="sensitiveDataTypes != null">sensitive_data_types = #{sensitiveDataTypes},</if>
+            <if test="endTime != null">end_time = #{endTime},</if>
+            <if test="durationSeconds != null">duration_seconds = #{durationSeconds},</if>
+            <if test="errorMessage != null">error_message = #{errorMessage},</if>
+            updated_time = NOW()
+        </set>
+        WHERE task_id = #{taskId}
+    </update>
+
+    <!-- 更新扫描状态 -->
+    <update id="updateStatus">
+        UPDATE sensitive_data_scan_record
+        SET status = #{status},
+            updated_time = NOW()
+        WHERE task_id = #{taskId}
+    </update>
+
+    <!-- 更新扫描进度 -->
+    <update id="updateProgress">
+        UPDATE sensitive_data_scan_record
+        SET scanned_files = #{scannedFiles},
+            sensitive_files_found = #{sensitiveFilesFound},
+            updated_time = NOW()
+        WHERE task_id = #{taskId}
+    </update>
+
+    <!-- 删除扫描记录 -->
+    <delete id="deleteById">
+        DELETE FROM sensitive_data_scan_record
+        WHERE id = #{id}
+    </delete>
+
+    <!-- 批量删除过期的记录 -->
+    <delete id="batchDeleteExpired">
+        DELETE FROM sensitive_data_scan_record
+        WHERE created_time &lt; DATE_SUB(NOW(), INTERVAL #{expireDays} DAY)
+    </delete>
+
+</mapper>

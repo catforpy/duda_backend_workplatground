@@ -1,0 +1,46 @@
+# duda-file模块 Nacos配置示例
+# Data ID: duda-file-provider.yaml
+# Group: DUDA_FILE_GROUP
+
+# 数据库配置
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://your-db-host:3306/duda_file?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: your-db-username
+    password: your-db-password
+
+# API密钥加密配置
+duda:
+  file:
+    encryption:
+      # AES加密密钥(必须保密,建议从环境变量或密钥管理服务读取)
+      # 密钥长度建议至少16位
+      # 生产环境建议使用: ${ENCRIPTION_KEY} 从环境变量读取
+      key: ${ENCRIPTION_KEY:duda-file-encryption-key-change-in-production}
+
+    # 存储适配器配置(可选,用于默认配置)
+    storage:
+      default-type: ALIYUN_OSS
+      default-region: cn-hangzhou
+
+# Dubbo配置
+dubbo:
+  application:
+    name: duda-file-provider
+  protocol:
+    name: dubbo
+    port: 20880
+  registry:
+    address: nacos://your-nacos-host:8848
+    group: DUDA_FILE_GROUP
+  scan:
+    base-packages: com.duda.file.provider
+
+# 日志配置
+logging:
+  level:
+    com.duda.file: INFO
+    com.duda.file.mapper: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"

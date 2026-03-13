@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.SecurityConfigMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.SecurityConfig">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="encryption_type" property="encryptionType" jdbcType="VARCHAR"/>
+        <result column="kms_key_id" property="kmsKeyId" jdbcType="VARCHAR"/>
+        <result column="enable_encryption" property="enableEncryption" jdbcType="TINYINT"/>
+        <result column="enable_client_encryption" property="enableClientEncryption" jdbcType="TINYINT"/>
+        <result column="tls_version" property="tlsVersion" jdbcType="VARCHAR"/>
+        <result column="integrity_check_type" property="integrityCheckType" jdbcType="VARCHAR"/>
+        <result column="enable_content_detection" property="enableContentDetection" jdbcType="TINYINT"/>
+        <result column="enable_virus_scan" property="enableVirusScan" jdbcType="TINYINT"/>
+        <result column="enable_sensitive_data_scan" property="enableSensitiveDataScan" jdbcType="TINYINT"/>
+        <result column="content_detection_threshold" property="contentDetectionThreshold" jdbcType="DECIMAL"/>
+        <result column="virus_scan_action" property="virusScanAction" jdbcType="VARCHAR"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, encryption_type, kms_key_id, enable_encryption, enable_client_encryption,
+        tls_version, integrity_check_type, enable_content_detection, enable_virus_scan,
+        enable_sensitive_data_scan, content_detection_threshold, virus_scan_action,
+        created_time, updated_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM security_config
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据Bucket名称查询 -->
+    <select id="selectByBucketName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM security_config
+        WHERE bucket_name = #{bucketName}
+    </select>
+
+    <!-- 查询启用内容检测的Bucket列表 -->
+    <select id="selectByContentDetectionEnabled" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM security_config
+        WHERE enable_content_detection = #{enabled}
+    </select>
+
+    <!-- 查询启用病毒扫描的Bucket列表 -->
+    <select id="selectByVirusScanEnabled" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM security_config
+        WHERE enable_virus_scan = #{enabled}
+    </select>
+
+    <!-- 查询启用敏感数据扫描的Bucket列表 -->
+    <select id="selectBySensitiveDataScanEnabled" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM security_config
+        WHERE enable_sensitive_data_scan = #{enabled}
+    </select>
+
+    <!-- 查询所有安全配置 -->
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM security_config
+    </select>
+
+    <!-- 插入安全配置 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.SecurityConfig"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO security_config (
+            bucket_name, encryption_type, kms_key_id, enable_encryption, enable_client_encryption,
+            tls_version, integrity_check_type, enable_content_detection, enable_virus_scan,
+            enable_sensitive_data_scan, content_detection_threshold, virus_scan_action
+        ) VALUES (
+            #{bucketName}, #{encryptionType}, #{kmsKeyId}, #{enableEncryption}, #{enableClientEncryption},
+            #{tlsVersion}, #{integrityCheckType}, #{enableContentDetection}, #{enableVirusScan},
+            #{enableSensitiveDataScan}, #{contentDetectionThreshold}, #{virusScanAction}
+        )
+    </insert>
+
+    <!-- 更新安全配置 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.SecurityConfig">
+        UPDATE security_config
+        <set>
+            <if test="encryptionType != null">encryption_type = #{encryptionType},</if>
+            <if test="kmsKeyId != null">kms_key_id = #{kmsKeyId},</if>
+            <if test="enableEncryption != null">enable_encryption = #{enableEncryption},</if>
+            <if test="enableClientEncryption != null">enable_client_encryption = #{enableClientEncryption},</if>
+            <if test="tlsVersion != null">tls_version = #{tlsVersion},</if>
+            <if test="integrityCheckType != null">integrity_check_type = #{integrityCheckType},</if>
+            <if test="enableContentDetection != null">enable_content_detection = #{enableContentDetection},</if>
+            <if test="enableVirusScan != null">enable_virus_scan = #{enableVirusScan},</if>
+            <if test="enableSensitiveDataScan != null">enable_sensitive_data_scan = #{enableSensitiveDataScan},</if>
+            <if test="contentDetectionThreshold != null">content_detection_threshold = #{contentDetectionThreshold},</if>
+            <if test="virusScanAction != null">virus_scan_action = #{virusScanAction},</if>
+            updated_time = NOW()
+        </set>
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新加密配置 -->
+    <update id="updateEncryption">
+        UPDATE security_config
+        SET encryption_type = #{encryptionType},
+            enable_encryption = #{enableEncryption},
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新内容检测配置 -->
+    <update id="updateContentDetection">
+        UPDATE security_config
+        SET enable_content_detection = #{enable},
+            content_detection_threshold = #{threshold},
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新病毒扫描配置 -->
+    <update id="updateVirusScan">
+        UPDATE security_config
+        SET enable_virus_scan = #{enable},
+            virus_scan_action = #{action},
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新敏感数据扫描配置 -->
+    <update id="updateSensitiveDataScan">
+        UPDATE security_config
+        SET enable_sensitive_data_scan = #{enable},
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 删除安全配置 -->
+    <delete id="deleteByBucketName">
+        DELETE FROM security_config
+        WHERE bucket_name = #{bucketName}
+    </delete>
+
+</mapper>

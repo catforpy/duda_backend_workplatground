@@ -1,4 +1,4 @@
-package com.duda.file.dto;
+package com.duda.file.dto.bucket;
 
 import com.duda.file.enums.AclType;
 import com.duda.file.enums.DataRedundancyType;
@@ -75,4 +75,24 @@ public class CreateBucketReqDTO {
      * 用户类型
      */
     private String userType;
+
+    /**
+     * 最大文件大小（字节，可选）
+     */
+    private Long maxFileSize;
+
+    /**
+     * 最大文件数量（可选）
+     */
+    private Integer maxFileCount;
+
+    /**
+     * Bucket类别（可选）
+     */
+    private String category;
+
+    /**
+     * Bucket描述（可选）
+     */
+    private String description;
 }

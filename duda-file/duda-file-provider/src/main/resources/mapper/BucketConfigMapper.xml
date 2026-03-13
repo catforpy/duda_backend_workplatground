@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.BucketConfigMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.BucketConfig">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="bucket_display_name" property="bucketDisplayName" jdbcType="VARCHAR"/>
+        <result column="storage_type" property="storageType" jdbcType="VARCHAR"/>
+        <result column="region" property="region" jdbcType="VARCHAR"/>
+        <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="user_type" property="userType" jdbcType="VARCHAR"/>
+        <result column="tenant_id" property="tenantId" jdbcType="BIGINT"/>
+        <result column="storage_class" property="storageClass" jdbcType="VARCHAR"/>
+        <result column="data_redundancy_type" property="dataRedundancyType" jdbcType="VARCHAR"/>
+        <result column="acl_type" property="aclType" jdbcType="VARCHAR"/>
+        <result column="max_file_size" property="maxFileSize" jdbcType="BIGINT"/>
+        <result column="max_file_count" property="maxFileCount" jdbcType="INTEGER"/>
+        <result column="max_storage_size" property="maxStorageSize" jdbcType="BIGINT"/>
+        <result column="allowed_file_types" property="allowedFileTypes" jdbcType="VARCHAR"/>
+        <result column="blocked_file_types" property="blockedFileTypes" jdbcType="VARCHAR"/>
+        <result column="domain_name" property="domainName" jdbcType="VARCHAR"/>
+        <result column="cdn_enabled" property="cdnEnabled" jdbcType="TINYINT"/>
+        <result column="cdn_domain" property="cdnDomain" jdbcType="VARCHAR"/>
+        <result column="versioning_enabled" property="versioningEnabled" jdbcType="TINYINT"/>
+        <result column="cors_enabled" property="corsEnabled" jdbcType="TINYINT"/>
+        <result column="watermark_enabled" property="watermarkEnabled" jdbcType="TINYINT"/>
+        <result column="encryption_enabled" property="encryptionEnabled" jdbcType="TINYINT"/>
+        <result column="lifecycle_enabled" property="lifecycleEnabled" jdbcType="TINYINT"/>
+        <result column="current_file_count" property="currentFileCount" jdbcType="INTEGER"/>
+        <result column="current_storage_size" property="currentStorageSize" jdbcType="BIGINT"/>
+        <result column="storage_used_quota" property="storageUsedQuota" jdbcType="BIGINT"/>
+        <result column="access_key_id" property="accessKeyId" jdbcType="VARCHAR"/>
+        <result column="access_key_secret" property="accessKeySecret" jdbcType="VARCHAR"/>
+        <result column="secret_key" property="secretKey" jdbcType="VARCHAR"/>
+        <result column="endpoint" property="endpoint" jdbcType="VARCHAR"/>
+        <result column="sts_role_arn" property="stsRoleArn" jdbcType="VARCHAR"/>
+        <result column="sts_external_id" property="stsExternalId" jdbcType="VARCHAR"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="auto_renew_enabled" property="autoRenewEnabled" jdbcType="TINYINT"/>
+        <result column="tags" property="tags" jdbcType="VARCHAR"/>
+        <result column="category" property="category" jdbcType="VARCHAR"/>
+        <result column="description" property="description" jdbcType="VARCHAR"/>
+        <result column="created_by" property="createdBy" jdbcType="BIGINT"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_by" property="updatedBy" jdbcType="BIGINT"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+        <result column="deleted_time" property="deletedTime" jdbcType="TIMESTAMP"/>
+        <result column="is_deleted" property="isDeleted" jdbcType="TINYINT"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, bucket_display_name, storage_type, region, user_id, user_type, tenant_id,
+        storage_class, data_redundancy_type, acl_type, max_file_size, max_file_count, max_storage_size,
+        allowed_file_types, blocked_file_types, domain_name, cdn_enabled, cdn_domain,
+        versioning_enabled, cors_enabled, watermark_enabled, encryption_enabled, lifecycle_enabled,
+        current_file_count, current_storage_size, storage_used_quota, access_key_id, access_key_secret,
+        secret_key, endpoint, sts_role_arn, sts_external_id, status, auto_renew_enabled, tags,
+        category, description, created_by, created_time, updated_by, updated_time, deleted_time, is_deleted
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_config
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据Bucket名称查询 -->
+    <select id="selectByBucketName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_config
+        WHERE bucket_name = #{bucketName}
+    </select>
+
+    <!-- 根据用户ID查询Bucket列表 -->
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_config
+        WHERE user_id = #{userId}
+        AND is_deleted = 0
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据用户ID和分片编号查询Bucket列表 -->
+    <select id="selectByUserIdAndShard" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_config
+        WHERE user_id = #{userId}
+        AND is_deleted = 0
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据状态查询Bucket列表 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_config
+        WHERE status = #{status}
+        AND is_deleted = 0
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 查询所有Bucket -->
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_config
+        WHERE is_deleted = 0
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 插入Bucket配置 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.BucketConfig"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO bucket_config (
+            bucket_name, bucket_display_name, storage_type, region, user_id, user_type, tenant_id,
+            storage_class, data_redundancy_type, acl_type, max_file_size, max_file_count, max_storage_size,
+            allowed_file_types, blocked_file_types, domain_name, cdn_enabled, cdn_domain,
+            versioning_enabled, cors_enabled, watermark_enabled, encryption_enabled, lifecycle_enabled,
+            current_file_count, current_storage_size, storage_used_quota, access_key_id, access_key_secret,
+            secret_key, endpoint, sts_role_arn, sts_external_id, status, auto_renew_enabled, tags,
+            category, description, created_by
+        ) VALUES (
+            #{bucketName}, #{bucketDisplayName}, #{storageType}, #{region}, #{userId}, #{userType}, #{tenantId},
+            #{storageClass}, #{dataRedundancyType}, #{aclType}, #{maxFileSize}, #{maxFileCount}, #{maxStorageSize},
+            #{allowedFileTypes}, #{blockedFileTypes}, #{domainName}, #{cdnEnabled}, #{cdnDomain},
+            #{versioningEnabled}, #{corsEnabled}, #{watermarkEnabled}, #{encryptionEnabled}, #{lifecycleEnabled},
+            #{currentFileCount}, #{currentStorageSize}, #{storageUsedQuota}, #{accessKeyId}, #{accessKeySecret},
+            #{secretKey}, #{endpoint}, #{stsRoleArn}, #{stsExternalId}, #{status}, #{autoRenewEnabled}, #{tags},
+            #{category}, #{description}, #{createdBy}
+        )
+    </insert>
+
+    <!-- 更新Bucket配置 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.BucketConfig">
+        UPDATE bucket_config
+        <set>
+            <if test="bucketDisplayName != null">bucket_display_name = #{bucketDisplayName},</if>
+            <if test="region != null">region = #{region},</if>
+            <if test="storageClass != null">storage_class = #{storageClass},</if>
+            <if test="aclType != null">acl_type = #{aclType},</if>
+            <if test="tags != null">tags = #{tags},</if>
+            <if test="description != null">description = #{description},</if>
+            <if test="maxFileSize != null">max_file_size = #{maxFileSize},</if>
+            <if test="maxFileCount != null">max_file_count = #{maxFileCount},</if>
+            <if test="maxStorageSize != null">max_storage_size = #{maxStorageSize},</if>
+            <if test="updatedBy != null">updated_by = #{updatedBy},</if>
+        </set>
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新Bucket使用统计 -->
+    <update id="updateUsage">
+        UPDATE bucket_config
+        SET current_storage_size = current_storage_size + #{size},
+            current_file_count = current_file_count + #{count},
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新Bucket状态 -->
+    <update id="updateStatus">
+        UPDATE bucket_config
+        SET status = #{status},
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 删除Bucket(软删除) -->
+    <update id="deleteByBucketName">
+        UPDATE bucket_config
+        SET is_deleted = 1,
+            status = 'DELETED',
+            deleted_time = NOW(),
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+</mapper>

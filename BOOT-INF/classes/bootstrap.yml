@@ -1,0 +1,95 @@
+# Bootstrap 配置 - 短信服务
+
+server:
+  port: 9091
+
+spring:
+  application:
+    name: duda-msg-provider
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  cloud:
+    nacos:
+      server-addr: ${NACOS_HOST:120.26.170.213}:${NACOS_PORT:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+
+      # 服务发现配置
+      discovery:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: MSG_GROUP
+        enabled: true
+        register-enabled: true
+
+      # 配置中心配置
+      config:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: MSG_GROUP
+        file-extension: yml
+        name: ${spring.application.name}
+        shared-configs:
+          # 从 Nacos 拉取公共配置（Redis等）
+          - data-id: common-${spring.profiles.active:dev}.yml
+            group: COMMON_GROUP
+            refresh: true
+        # Spring Cloud 2023 配置导入检查
+        import-check:
+          enabled: false  # 禁用配置导入检查
+
+  # Redis配置
+  data:
+    redis:
+      host: host.docker.internal
+      port: 6379
+      password:
+      database: 0
+      timeout: 5000
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1
+          max-idle: 8
+          min-idle: 0
+
+# Dubbo配置
+dubbo:
+  application:
+    name: duda-msg-provider
+  protocol:
+    name: dubbo
+    port: -1  # -1表示自动分配端口
+  registry:
+    address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+    parameters:
+      namespace: ${NACOS_NAMESPACE:duda-dev}
+      group: MSG_GROUP
+      use-as-config-center: false
+      use-as-metadata-center: false
+  scan:
+    base-packages: com.duda.msg.provider.rpc
+  consumer:
+    check: false
+    timeout: 5000
+    retries: 2
+
+# 短信服务配置
+duda:
+  sms:
+    real-send: false  # 开发环境：false（只打印日志），生产环境：true（真实发送）
+    server-ip: app.cloopen.com
+    port: 8883
+    account-id: your-account-id
+    account-token: your-account-token
+    app-id: your-app-id
+    test-phone: 13800138000
+    code-expire-seconds: 60  # 验证码有效期60秒
+    code-length: 4  # 验证码长度4位
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.duda.msg: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

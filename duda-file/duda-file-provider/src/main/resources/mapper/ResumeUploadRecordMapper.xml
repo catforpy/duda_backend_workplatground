@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.ResumeUploadRecordMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.ResumeUploadRecord">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="record_id" property="recordId" jdbcType="VARCHAR"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="object_key" property="objectKey" jdbcType="VARCHAR"/>
+        <result column="local_file_path" property="localFilePath" jdbcType="VARCHAR"/>
+        <result column="file_size" property="fileSize" jdbcType="BIGINT"/>
+        <result column="part_size" property="partSize" jdbcType="BIGINT"/>
+        <result column="total_part_count" property="totalPartCount" jdbcType="INTEGER"/>
+        <result column="uploaded_parts" property="uploadedParts" jdbcType="VARCHAR"/>
+        <result column="upload_status" property="uploadStatus" jdbcType="VARCHAR"/>
+        <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="user_shard" property="userShard" jdbcType="TINYINT"/>
+        <result column="client_type" property="clientType" jdbcType="VARCHAR"/>
+        <result column="device_id" property="deviceId" jdbcType="VARCHAR"/>
+        <result column="concurrent_threads" property="concurrentThreads" jdbcType="INTEGER"/>
+        <result column="start_time" property="startTime" jdbcType="TIMESTAMP"/>
+        <result column="complete_time" property="completeTime" jdbcType="TIMESTAMP"/>
+        <result column="last_update_time" property="lastUpdateTime" jdbcType="TIMESTAMP"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, record_id, bucket_name, object_key, local_file_path, file_size, part_size,
+        total_part_count, uploaded_parts, upload_status, user_id, user_shard, client_type,
+        device_id, concurrent_threads, start_time, complete_time, last_update_time,
+        created_time, updated_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM resume_upload_record
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据记录ID查询 -->
+    <select id="selectByRecordId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM resume_upload_record
+        WHERE record_id = #{recordId}
+    </select>
+
+    <!-- 根据用户ID查询断点续传记录 -->
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM resume_upload_record
+        WHERE user_id = #{userId}
+        ORDER BY last_update_time DESC
+    </select>
+
+    <!-- 根据用户ID和分片编号查询记录 -->
+    <select id="selectByUserIdAndShard" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM resume_upload_record
+        WHERE user_id = #{userId}
+        AND user_shard = #{userShard}
+        ORDER BY last_update_time DESC
+    </select>
+
+    <!-- 根据状态查询记录 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM resume_upload_record
+        WHERE upload_status = #{uploadStatus}
+        ORDER BY last_update_time DESC
+    </select>
+
+    <!-- 查询指定时间之前未完成的记录 -->
+    <select id="selectExpired" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM resume_upload_record
+        WHERE upload_status IN ('PAUSED', 'IN_PROGRESS')
+        AND last_update_time &lt; #{expireTime}
+    </select>
+
+    <!-- 插入断点续传记录 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.ResumeUploadRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO resume_upload_record (
+            record_id, bucket_name, object_key, local_file_path, file_size, part_size,
+            total_part_count, uploaded_parts, upload_status, user_id, user_shard, client_type,
+            device_id, concurrent_threads, start_time, complete_time, last_update_time
+        ) VALUES (
+            #{recordId}, #{bucketName}, #{objectKey}, #{localFilePath}, #{fileSize}, #{partSize},
+            #{totalPartCount}, #{uploadedParts}, #{uploadStatus}, #{userId}, #{userShard},
+            #{clientType}, #{deviceId}, #{concurrentThreads}, #{startTime}, #{completeTime},
+            #{lastUpdateTime}
+        )
+    </insert>
+
+    <!-- 更新断点续传记录 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.ResumeUploadRecord">
+        UPDATE resume_upload_record
+        <set>
+            <if test="uploadedParts != null">uploaded_parts = #{uploadedParts},</if>
+            <if test="uploadStatus != null">upload_status = #{uploadStatus},</if>
+            <if test="completeTime != null">complete_time = #{completeTime},</if>
+            <if test="lastUpdateTime != null">last_update_time = #{lastUpdateTime},</if>
+            updated_time = NOW()
+        </set>
+        WHERE record_id = #{recordId}
+    </update>
+
+    <!-- 更新上传状态 -->
+    <update id="updateStatus">
+        UPDATE resume_upload_record
+        SET upload_status = #{uploadStatus},
+            updated_time = NOW()
+        WHERE record_id = #{recordId}
+    </update>
+
+    <!-- 更新上传进度 -->
+    <update id="updateProgress">
+        UPDATE resume_upload_record
+        SET uploaded_parts = #{uploadedParts},
+            last_update_time = #{lastUpdateTime},
+            updated_time = NOW()
+        WHERE record_id = #{recordId}
+    </update>
+
+    <!-- 删除断点续传记录 -->
+    <delete id="deleteByRecordId">
+        DELETE FROM resume_upload_record
+        WHERE record_id = #{recordId}
+    </delete>
+
+    <!-- 批量删除过期的记录 -->
+    <delete id="batchDeleteExpired">
+        DELETE FROM resume_upload_record
+        WHERE upload_status IN ('COMPLETED', 'FAILED', 'CANCELLED')
+        AND updated_time &lt; #{expireTime}
+    </delete>
+
+</mapper>

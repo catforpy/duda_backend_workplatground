@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.FileAccessLogMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.FileAccessLog">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="object_key" property="objectKey" jdbcType="VARCHAR"/>
+        <result column="operation" property="operation" jdbcType="VARCHAR"/>
+        <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="user_shard" property="userShard" jdbcType="TINYINT"/>
+        <result column="client_ip" property="clientIp" jdbcType="VARCHAR"/>
+        <result column="device_id" property="deviceId" jdbcType="VARCHAR"/>
+        <result column="user_agent" property="userAgent" jdbcType="VARCHAR"/>
+        <result column="file_size" property="fileSize" jdbcType="BIGINT"/>
+        <result column="result_status" property="resultStatus" jdbcType="VARCHAR"/>
+        <result column="error_message" property="errorMessage" jdbcType="VARCHAR"/>
+        <result column="start_time" property="startTime" jdbcType="TIMESTAMP"/>
+        <result column="end_time" property="endTime" jdbcType="TIMESTAMP"/>
+        <result column="duration_ms" property="durationMs" jdbcType="BIGINT"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, object_key, operation, user_id, user_shard, client_ip, device_id,
+        user_agent, file_size, result_status, error_message, start_time, end_time,
+        duration_ms, created_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_access_log
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据Bucket和对象键查询日志 -->
+    <select id="selectByBucketAndKey" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_access_log
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 根据用户ID查询日志 -->
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_access_log
+        WHERE user_id = #{userId}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 根据操作类型查询日志 -->
+    <select id="selectByOperation" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_access_log
+        WHERE operation = #{operation}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 根据结果状态查询日志 -->
+    <select id="selectByResultStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_access_log
+        WHERE result_status = #{resultStatus}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 根据时间范围查询日志 -->
+    <select id="selectByTimeRange" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_access_log
+        WHERE start_time BETWEEN #{startTime} AND #{endTime}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 查询最近的日志 -->
+    <select id="selectRecent" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_access_log
+        ORDER BY start_time DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <!-- 插入访问日志 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.FileAccessLog"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO file_access_log (
+            bucket_name, object_key, operation, user_id, user_shard, client_ip, device_id,
+            user_agent, file_size, result_status, error_message, start_time, end_time, duration_ms
+        ) VALUES (
+            #{bucketName}, #{objectKey}, #{operation}, #{userId}, #{userShard}, #{clientIp},
+            #{deviceId}, #{userAgent}, #{fileSize}, #{resultStatus}, #{errorMessage},
+            #{startTime}, #{endTime}, #{durationMs}
+        )
+    </insert>
+
+    <!-- 批量插入访问日志 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO file_access_log (
+            bucket_name, object_key, operation, user_id, user_shard, client_ip, device_id,
+            user_agent, file_size, result_status, error_message, start_time, end_time, duration_ms
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.bucketName}, #{item.objectKey}, #{item.operation}, #{item.userId}, #{item.userShard},
+            #{item.clientIp}, #{item.deviceId}, #{item.userAgent}, #{item.fileSize}, #{item.resultStatus},
+            #{item.errorMessage}, #{item.startTime}, #{item.endTime}, #{item.durationMs})
+        </foreach>
+    </insert>
+
+    <!-- 删除日志 -->
+    <delete id="deleteById">
+        DELETE FROM file_access_log
+        WHERE id = #{id}
+    </delete>
+
+    <!-- 批量删除过期的日志 -->
+    <delete id="batchDeleteExpired">
+        DELETE FROM file_access_log
+        WHERE created_time &lt; DATE_SUB(NOW(), INTERVAL #{expireDays} DAY)
+    </delete>
+
+    <!-- 统计访问次数 -->
+    <select id="countByOperation" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM file_access_log
+        WHERE operation = #{operation}
+        AND created_time &gt;= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+    </select>
+
+    <!-- 统计流量 -->
+    <select id="sumTrafficByTimeRange" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(file_size), 0)
+        FROM file_access_log
+        WHERE start_time BETWEEN #{startTime} AND #{endTime}
+        AND result_status = 'SUCCESS'
+    </select>
+
+</mapper>

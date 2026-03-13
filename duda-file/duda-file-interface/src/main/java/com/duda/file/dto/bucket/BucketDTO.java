@@ -1,4 +1,4 @@
-package com.duda.file.dto;
+package com.duda.file.dto.bucket;
 
 import com.duda.file.enums.AclType;
 import com.duda.file.enums.DataRedundancyType;

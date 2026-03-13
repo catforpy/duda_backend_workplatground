@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.ContentDetectionRecordMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.ContentDetectionRecord">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="task_id" property="taskId" jdbcType="VARCHAR"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="object_key" property="objectKey" jdbcType="VARCHAR"/>
+        <result column="detection_type" property="detectionType" jdbcType="VARCHAR"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="porn_label" property="pornLabel" jdbcType="VARCHAR"/>
+        <result column="porn_score" property="pornScore" jdbcType="DECIMAL"/>
+        <result column="porn_confidence" property="pornConfidence" jdbcType="DECIMAL"/>
+        <result column="politics_label" property="politicsLabel" jdbcType="VARCHAR"/>
+        <result column="politics_score" property="politicsScore" jdbcType="DECIMAL"/>
+        <result column="politics_confidence" property="politicsConfidence" jdbcType="DECIMAL"/>
+        <result column="terrorism_label" property="terrorismLabel" jdbcType="VARCHAR"/>
+        <result column="terrorism_score" property="terrorismScore" jdbcType="DECIMAL"/>
+        <result column="terrorism_confidence" property="terrorismConfidence" jdbcType="DECIMAL"/>
+        <result column="ad_label" property="adLabel" jdbcType="VARCHAR"/>
+        <result column="ad_score" property="adScore" jdbcType="DECIMAL"/>
+        <result column="ad_confidence" property="adConfidence" jdbcType="DECIMAL"/>
+        <result column="is_aigc" property="isAigc" jdbcType="TINYINT"/>
+        <result column="aigc_confidence" property="aigcConfidence" jdbcType="DECIMAL"/>
+        <result column="aigc_tool_type" property="aigcToolType" jdbcType="VARCHAR"/>
+        <result column="risk_level" property="riskLevel" jdbcType="VARCHAR"/>
+        <result column="action_taken" property="actionTaken" jdbcType="VARCHAR"/>
+        <result column="error_message" property="errorMessage" jdbcType="VARCHAR"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, task_id, bucket_name, object_key, detection_type, status,
+        porn_label, porn_score, porn_confidence,
+        politics_label, politics_score, politics_confidence,
+        terrorism_label, terrorism_score, terrorism_confidence,
+        ad_label, ad_score, ad_confidence,
+        is_aigc, aigc_confidence, aigc_tool_type,
+        risk_level, action_taken, error_message, created_time, updated_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM content_detection_record
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据任务ID查询 -->
+    <select id="selectByTaskId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM content_detection_record
+        WHERE task_id = #{taskId}
+    </select>
+
+    <!-- 根据Bucket名称查询检测记录 -->
+    <select id="selectByBucketName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM content_detection_record
+        WHERE bucket_name = #{bucketName}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据Bucket和对象键查询 -->
+    <select id="selectByBucketAndKey" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM content_detection_record
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据检测类型查询记录 -->
+    <select id="selectByDetectionType" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM content_detection_record
+        WHERE detection_type = #{detectionType}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据状态查询记录 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM content_detection_record
+        WHERE status = #{status}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据风险等级查询记录 -->
+    <select id="selectByRiskLevel" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM content_detection_record
+        WHERE risk_level = #{riskLevel}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 插入检测记录 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.ContentDetectionRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO content_detection_record (
+            task_id, bucket_name, object_key, detection_type, status,
+            porn_label, porn_score, porn_confidence,
+            politics_label, politics_score, politics_confidence,
+            terrorism_label, terrorism_score, terrorism_confidence,
+            ad_label, ad_score, ad_confidence,
+            is_aigc, aigc_confidence, aigc_tool_type,
+            risk_level, action_taken, error_message
+        ) VALUES (
+            #{taskId}, #{bucketName}, #{objectKey}, #{detectionType}, #{status},
+            #{pornLabel}, #{pornScore}, #{pornConfidence},
+            #{politicsLabel}, #{politicsScore}, #{politicsConfidence},
+            #{terrorismLabel}, #{terrorismScore}, #{terrorismConfidence},
+            #{adLabel}, #{adScore}, #{adConfidence},
+            #{isAigc}, #{aigcConfidence}, #{aigcToolType},
+            #{riskLevel}, #{actionTaken}, #{errorMessage}
+        )
+    </insert>
+
+    <!-- 更新检测记录 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.ContentDetectionRecord">
+        UPDATE content_detection_record
+        <set>
+            <if test="status != null">status = #{status},</if>
+            <if test="pornLabel != null">porn_label = #{pornLabel},</if>
+            <if test="pornScore != null">porn_score = #{pornScore},</if>
+            <if test="pornConfidence != null">porn_confidence = #{pornConfidence},</if>
+            <if test="politicsLabel != null">politics_label = #{politicsLabel},</if>
+            <if test="politicsScore != null">politics_score = #{politicsScore},</if>
+            <if test="politicsConfidence != null">politics_confidence = #{politicsConfidence},</if>
+            <if test="terrorismLabel != null">terrorism_label = #{terrorismLabel},</if>
+            <if test="terrorismScore != null">terrorism_score = #{terrorismScore},</if>
+            <if test="terrorismConfidence != null">terrorism_confidence = #{terrorismConfidence},</if>
+            <if test="adLabel != null">ad_label = #{adLabel},</if>
+            <if test="adScore != null">ad_score = #{adScore},</if>
+            <if test="adConfidence != null">ad_confidence = #{adConfidence},</if>
+            <if test="isAigc != null">is_aigc = #{isAigc},</if>
+            <if test="aigcConfidence != null">aigc_confidence = #{aigcConfidence},</if>
+            <if test="aigcToolType != null">aigc_tool_type = #{aigcToolType},</if>
+            <if test="riskLevel != null">risk_level = #{riskLevel},</if>
+            <if test="actionTaken != null">action_taken = #{actionTaken},</if>
+            <if test="errorMessage != null">error_message = #{errorMessage},</if>
+            updated_time = NOW()
+        </set>
+        WHERE task_id = #{taskId}
+    </update>
+
+    <!-- 更新检测状态 -->
+    <update id="updateStatus">
+        UPDATE content_detection_record
+        SET status = #{status},
+            updated_time = NOW()
+        WHERE task_id = #{taskId}
+    </update>
+
+    <!-- 更新检测结果 -->
+    <update id="updateResult">
+        UPDATE content_detection_record
+        SET status = 'SUCCESS',
+            risk_level = #{riskLevel},
+            action_taken = #{actionTaken},
+            updated_time = NOW()
+        WHERE task_id = #{taskId}
+    </update>
+
+    <!-- 删除检测记录 -->
+    <delete id="deleteById">
+        DELETE FROM content_detection_record
+        WHERE id = #{id}
+    </delete>
+
+    <!-- 批量删除过期的记录 -->
+    <delete id="batchDeleteExpired">
+        DELETE FROM content_detection_record
+        WHERE created_time &lt; DATE_SUB(NOW(), INTERVAL #{expireDays} DAY)
+    </delete>
+
+</mapper>

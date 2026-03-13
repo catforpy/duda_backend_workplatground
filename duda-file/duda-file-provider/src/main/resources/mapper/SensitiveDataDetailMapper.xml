@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.SensitiveDataDetailMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.SensitiveDataDetail">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="scan_task_id" property="scanTaskId" jdbcType="VARCHAR"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="object_key" property="objectKey" jdbcType="VARCHAR"/>
+        <result column="data_type" property="dataType" jdbcType="VARCHAR"/>
+        <result column="data_level" property="dataLevel" jdbcType="VARCHAR"/>
+        <result column="data_count" property="dataCount" jdbcType="BIGINT"/>
+        <result column="data_sample" property="dataSample" jdbcType="VARCHAR"/>
+        <result column="occurrence_position" property="occurrencePosition" jdbcType="VARCHAR"/>
+        <result column="risk_level" property="riskLevel" jdbcType="VARCHAR"/>
+        <result column="action_taken" property="actionTaken" jdbcType="VARCHAR"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, scan_task_id, bucket_name, object_key, data_type, data_level, data_count,
+        data_sample, occurrence_position, risk_level, action_taken, created_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_detail
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据扫描任务ID查询详情列表 -->
+    <select id="selectByScanTaskId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_detail
+        WHERE scan_task_id = #{scanTaskId}
+        ORDER BY data_level DESC, data_count DESC
+    </select>
+
+    <!-- 根据Bucket和对象键查询 -->
+    <select id="selectByBucketAndKey" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_detail
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+        ORDER BY data_level DESC, data_count DESC
+    </select>
+
+    <!-- 根据敏感数据类型查询 -->
+    <select id="selectByDataType" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_detail
+        WHERE data_type = #{dataType}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据敏感等级查询 -->
+    <select id="selectByDataLevel" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_detail
+        WHERE data_level = #{dataLevel}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据风险等级查询 -->
+    <select id="selectByRiskLevel" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_data_detail
+        WHERE risk_level = #{riskLevel}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 插入敏感数据详情 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.SensitiveDataDetail"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sensitive_data_detail (
+            scan_task_id, bucket_name, object_key, data_type, data_level, data_count,
+            data_sample, occurrence_position, risk_level, action_taken
+        ) VALUES (
+            #{scanTaskId}, #{bucketName}, #{objectKey}, #{dataType}, #{dataLevel}, #{dataCount},
+            #{dataSample}, #{occurrencePosition}, #{riskLevel}, #{actionTaken}
+        )
+    </insert>
+
+    <!-- 批量插入敏感数据详情 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO sensitive_data_detail (
+            scan_task_id, bucket_name, object_key, data_type, data_level, data_count,
+            data_sample, occurrence_position, risk_level, action_taken
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.scanTaskId}, #{item.bucketName}, #{item.objectKey}, #{item.dataType},
+            #{item.dataLevel}, #{item.dataCount}, #{item.dataSample}, #{item.occurrencePosition},
+            #{item.riskLevel}, #{item.actionTaken})
+        </foreach>
+    </insert>
+
+    <!-- 更新敏感数据详情 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.SensitiveDataDetail">
+        UPDATE sensitive_data_detail
+        <set>
+            <if test="dataCount != null">data_count = #{dataCount},</if>
+            <if test="dataSample != null">data_sample = #{dataSample},</if>
+            <if test="occurrencePosition != null">occurrence_position = #{occurrencePosition},</if>
+            <if test="riskLevel != null">risk_level = #{riskLevel},</if>
+            <if test="actionTaken != null">action_taken = #{actionTaken},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新处理操作 -->
+    <update id="updateAction">
+        UPDATE sensitive_data_detail
+        SET action_taken = #{actionTaken}
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除敏感数据详情 -->
+    <delete id="deleteById">
+        DELETE FROM sensitive_data_detail
+        WHERE id = #{id}
+    </delete>
+
+    <!-- 批量删除根据任务ID -->
+    <delete id="batchDeleteByScanTaskId">
+        DELETE FROM sensitive_data_detail
+        WHERE scan_task_id = #{scanTaskId}
+    </delete>
+
+    <!-- 统计扫描任务发现的敏感数据数量 -->
+    <select id="countByScanTaskId" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM sensitive_data_detail
+        WHERE scan_task_id = #{scanTaskId}
+    </select>
+
+</mapper>

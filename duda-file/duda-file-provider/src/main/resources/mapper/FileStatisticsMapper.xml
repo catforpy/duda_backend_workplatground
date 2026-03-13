@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.FileStatisticsMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.FileStatistics">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="stat_date" property="statDate" jdbcType="DATE"/>
+        <result column="stat_type" property="statType" jdbcType="VARCHAR"/>
+        <result column="total_files" property="totalFiles" jdbcType="BIGINT"/>
+        <result column="total_size" property="totalSize" jdbcType="BIGINT"/>
+        <result column="upload_count" property="uploadCount" jdbcType="BIGINT"/>
+        <result column="download_count" property="downloadCount" jdbcType="BIGINT"/>
+        <result column="traffic_upload" property="trafficUpload" jdbcType="BIGINT"/>
+        <result column="traffic_download" property="trafficDownload" jdbcType="BIGINT"/>
+        <result column="new_files" property="newFiles" jdbcType="BIGINT"/>
+        <result column="deleted_files" property="deletedFiles" jdbcType="BIGINT"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, stat_date, stat_type, total_files, total_size, upload_count,
+        download_count, traffic_upload, traffic_download, new_files, deleted_files,
+        created_time, updated_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_statistics
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据Bucket名称、日期和类型查询 -->
+    <select id="selectByBucketAndDateAndType" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_statistics
+        WHERE bucket_name = #{bucketName}
+        AND stat_date = #{statDate}
+        AND stat_type = #{statType}
+    </select>
+
+    <!-- 根据Bucket名称查询统计列表 -->
+    <select id="selectByBucket" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_statistics
+        WHERE bucket_name = #{bucketName}
+        ORDER BY stat_date DESC
+    </select>
+
+    <!-- 根据日期范围查询统计列表 -->
+    <select id="selectByDateRange" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_statistics
+        WHERE stat_date BETWEEN #{startDate} AND #{endDate}
+        ORDER BY stat_date DESC
+    </select>
+
+    <!-- 根据统计类型查询统计列表 -->
+    <select id="selectByType" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_statistics
+        WHERE stat_type = #{statType}
+        ORDER BY stat_date DESC
+    </select>
+
+    <!-- 查询所有统计 -->
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM file_statistics
+        ORDER BY stat_date DESC
+    </select>
+
+    <!-- 插入统计记录 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.FileStatistics"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO file_statistics (
+            bucket_name, stat_date, stat_type, total_files, total_size, upload_count,
+            download_count, traffic_upload, traffic_download, new_files, deleted_files
+        ) VALUES (
+            #{bucketName}, #{statDate}, #{statType}, #{totalFiles}, #{totalSize},
+            #{uploadCount}, #{downloadCount}, #{trafficUpload}, #{trafficDownload},
+            #{newFiles}, #{deletedFiles}
+        )
+    </insert>
+
+    <!-- 批量插入统计记录 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO file_statistics (
+            bucket_name, stat_date, stat_type, total_files, total_size, upload_count,
+            download_count, traffic_upload, traffic_download, new_files, deleted_files
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.bucketName}, #{item.statDate}, #{item.statType}, #{item.totalFiles},
+            #{item.totalSize}, #{item.uploadCount}, #{item.downloadCount}, #{item.trafficUpload},
+            #{item.trafficDownload}, #{item.newFiles}, #{item.deletedFiles})
+        </foreach>
+    </insert>
+
+    <!-- 更新统计记录 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.FileStatistics">
+        UPDATE file_statistics
+        <set>
+            <if test="totalFiles != null">total_files = #{totalFiles},</if>
+            <if test="totalSize != null">total_size = #{totalSize},</if>
+            <if test="uploadCount != null">upload_count = #{uploadCount},</if>
+            <if test="downloadCount != null">download_count = #{downloadCount},</if>
+            <if test="trafficUpload != null">traffic_upload = #{trafficUpload},</if>
+            <if test="trafficDownload != null">traffic_download = #{trafficDownload},</if>
+            <if test="newFiles != null">new_files = #{newFiles},</if>
+            <if test="deletedFiles != null">deleted_files = #{deletedFiles},</if>
+            updated_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除统计记录 -->
+    <delete id="deleteById">
+        DELETE FROM file_statistics
+        WHERE id = #{id}
+    </delete>
+
+</mapper>

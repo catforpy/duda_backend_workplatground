@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.UploadRecordMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.UploadRecord">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="object_key" property="objectKey" jdbcType="VARCHAR"/>
+        <result column="upload_id" property="uploadId" jdbcType="VARCHAR"/>
+        <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="user_shard" property="userShard" jdbcType="TINYINT"/>
+        <result column="file_name" property="fileName" jdbcType="VARCHAR"/>
+        <result column="file_size" property="fileSize" jdbcType="BIGINT"/>
+        <result column="file_md5" property="fileMd5" jdbcType="VARCHAR"/>
+        <result column="content_type" property="contentType" jdbcType="VARCHAR"/>
+        <result column="upload_method" property="uploadMethod" jdbcType="VARCHAR"/>
+        <result column="part_count" property="partCount" jdbcType="INTEGER"/>
+        <result column="part_size" property="partSize" jdbcType="BIGINT"/>
+        <result column="uploaded_parts" property="uploadedParts" jdbcType="INTEGER"/>
+        <result column="upload_status" property="uploadStatus" jdbcType="VARCHAR"/>
+        <result column="start_time" property="startTime" jdbcType="TIMESTAMP"/>
+        <result column="complete_time" property="completeTime" jdbcType="TIMESTAMP"/>
+        <result column="upload_ip" property="uploadIp" jdbcType="VARCHAR"/>
+        <result column="client_type" property="clientType" jdbcType="VARCHAR"/>
+        <result column="device_id" property="deviceId" jdbcType="VARCHAR"/>
+        <result column="user_agent" property="userAgent" jdbcType="VARCHAR"/>
+        <result column="error_message" property="errorMessage" jdbcType="VARCHAR"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, object_key, upload_id, user_id, user_shard, file_name, file_size,
+        file_md5, content_type, upload_method, part_count, part_size, uploaded_parts,
+        upload_status, start_time, complete_time, upload_ip, client_type, device_id,
+        user_agent, error_message, created_time, updated_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM upload_record
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据上传ID查询 -->
+    <select id="selectByUploadId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM upload_record
+        WHERE upload_id = #{uploadId}
+    </select>
+
+    <!-- 根据用户ID查询上传记录 -->
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM upload_record
+        WHERE user_id = #{userId}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 根据用户ID和分片编号查询上传记录 -->
+    <select id="selectByUserIdAndShard" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM upload_record
+        WHERE user_id = #{userId}
+        AND user_shard = #{userShard}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 根据Bucket和对象键查询上传记录 -->
+    <select id="selectByBucketAndKey" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM upload_record
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 根据上传状态查询记录 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM upload_record
+        WHERE upload_status = #{uploadStatus}
+        ORDER BY start_time DESC
+    </select>
+
+    <!-- 查询最近的上传记录 -->
+    <select id="selectRecent" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM upload_record
+        ORDER BY start_time DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <!-- 插入上传记录 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.UploadRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO upload_record (
+            bucket_name, object_key, upload_id, user_id, user_shard, file_name, file_size,
+            file_md5, content_type, upload_method, part_count, part_size, uploaded_parts,
+            upload_status, start_time, complete_time, upload_ip, client_type, device_id,
+            user_agent, error_message
+        ) VALUES (
+            #{bucketName}, #{objectKey}, #{uploadId}, #{userId}, #{userShard}, #{fileName},
+            #{fileSize}, #{fileMd5}, #{contentType}, #{uploadMethod}, #{partCount}, #{partSize},
+            #{uploadedParts}, #{uploadStatus}, #{startTime}, #{completeTime}, #{uploadIp},
+            #{clientType}, #{deviceId}, #{userAgent}, #{errorMessage}
+        )
+    </insert>
+
+    <!-- 更新上传记录 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.UploadRecord">
+        UPDATE upload_record
+        <set>
+            <if test="completeTime != null">complete_time = #{completeTime},</if>
+            <if test="uploadedParts != null">uploaded_parts = #{uploadedParts},</if>
+            <if test="uploadStatus != null">upload_status = #{uploadStatus},</if>
+            <if test="errorMessage != null">error_message = #{errorMessage},</if>
+            updated_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新上传状态 -->
+    <update id="updateStatus">
+        UPDATE upload_record
+        SET upload_status = #{uploadStatus},
+            updated_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新上传进度 -->
+    <update id="updateProgress">
+        UPDATE upload_record
+        SET uploaded_parts = #{uploadedParts},
+            updated_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除上传记录 -->
+    <delete id="deleteById">
+        DELETE FROM upload_record
+        WHERE id = #{id}
+    </delete>
+
+</mapper>

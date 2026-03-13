@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.VirusScanRecordMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.VirusScanRecord">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="task_id" property="taskId" jdbcType="VARCHAR"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="object_key" property="objectKey" jdbcType="VARCHAR"/>
+        <result column="file_size" property="fileSize" jdbcType="BIGINT"/>
+        <result column="file_version_id" property="fileVersionId" jdbcType="VARCHAR"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="virus_found" property="virusFound" jdbcType="TINYINT"/>
+        <result column="virus_type" property="virusType" jdbcType="VARCHAR"/>
+        <result column="virus_name" property="virusName" jdbcType="VARCHAR"/>
+        <result column="scan_time" property="scanTime" jdbcType="BIGINT"/>
+        <result column="action_taken" property="actionTaken" jdbcType="VARCHAR"/>
+        <result column="error_message" property="errorMessage" jdbcType="VARCHAR"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, task_id, bucket_name, object_key, file_size, file_version_id, status,
+        virus_found, virus_type, virus_name, scan_time, action_taken, error_message,
+        created_time, updated_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM virus_scan_record
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据任务ID查询 -->
+    <select id="selectByTaskId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM virus_scan_record
+        WHERE task_id = #{taskId}
+    </select>
+
+    <!-- 根据Bucket名称查询扫描记录 -->
+    <select id="selectByBucketName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM virus_scan_record
+        WHERE bucket_name = #{bucketName}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据Bucket和对象键查询 -->
+    <select id="selectByBucketAndKey" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM virus_scan_record
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据状态查询扫描记录 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM virus_scan_record
+        WHERE status = #{status}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 查询发现病毒的记录 -->
+    <select id="selectVirusFound" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM virus_scan_record
+        WHERE virus_found = #{virusFound}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 插入扫描记录 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.VirusScanRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO virus_scan_record (
+            task_id, bucket_name, object_key, file_size, file_version_id, status,
+            virus_found, virus_type, virus_name, scan_time, action_taken, error_message
+        ) VALUES (
+            #{taskId}, #{bucketName}, #{objectKey}, #{fileSize}, #{fileVersionId}, #{status},
+            #{virusFound}, #{virusType}, #{virusName}, #{scanTime}, #{actionTaken}, #{errorMessage}
+        )
+    </insert>
+
+    <!-- 更新扫描记录 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.VirusScanRecord">
+        UPDATE virus_scan_record
+        <set>
+            <if test="status != null">status = #{status},</if>
+            <if test="virusFound != null">virus_found = #{virusFound},</if>
+            <if test="virusType != null">virus_type = #{virusType},</if>
+            <if test="virusName != null">virus_name = #{virusName},</if>
+            <if test="scanTime != null">scan_time = #{scanTime},</if>
+            <if test="actionTaken != null">action_taken = #{actionTaken},</if>
+            <if test="errorMessage != null">error_message = #{errorMessage},</if>
+            updated_time = NOW()
+        </set>
+        WHERE task_id = #{taskId}
+    </update>
+
+    <!-- 更新扫描状态 -->
+    <update id="updateStatus">
+        UPDATE virus_scan_record
+        SET status = #{status},
+            updated_time = NOW()
+        WHERE task_id = #{taskId}
+    </update>
+
+    <!-- 更新扫描结果 -->
+    <update id="updateResult">
+        UPDATE virus_scan_record
+        SET status = 'SUCCESS',
+            virus_found = #{virusFound},
+            virus_type = #{virusType},
+            virus_name = #{virusName},
+            action_taken = #{actionTaken},
+            updated_time = NOW()
+        WHERE task_id = #{taskId}
+    </update>
+
+    <!-- 删除扫描记录 -->
+    <delete id="deleteById">
+        DELETE FROM virus_scan_record
+        WHERE id = #{id}
+    </delete>
+
+    <!-- 批量删除过期的记录 -->
+    <delete id="batchDeleteExpired">
+        DELETE FROM virus_scan_record
+        WHERE created_time &lt; DATE_SUB(NOW(), INTERVAL #{expireDays} DAY)
+    </delete>
+
+</mapper>

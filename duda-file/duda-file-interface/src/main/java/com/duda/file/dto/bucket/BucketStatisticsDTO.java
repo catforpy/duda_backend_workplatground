@@ -1,4 +1,4 @@
-package com.duda.file.dto;
+package com.duda.file.dto.bucket;
 
 import lombok.Builder;
 import lombok.Data;

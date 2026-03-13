@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.ObjectMetadataMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.ObjectMetadata">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="object_key" property="objectKey" jdbcType="VARCHAR"/>
+        <result column="version_id" property="versionId" jdbcType="VARCHAR"/>
+        <result column="file_size" property="fileSize" jdbcType="BIGINT"/>
+        <result column="file_name" property="fileName" jdbcType="VARCHAR"/>
+        <result column="content_type" property="contentType" jdbcType="VARCHAR"/>
+        <result column="content_md5" property="contentMd5" jdbcType="VARCHAR"/>
+        <result column="crc64" property="crc64" jdbcType="BIGINT"/>
+        <result column="storage_class" property="storageClass" jdbcType="VARCHAR"/>
+        <result column="object_type" property="objectType" jdbcType="VARCHAR"/>
+        <result column="is_directory" property="isDirectory" jdbcType="TINYINT"/>
+        <result column="is_symlink" property="isSymlink" jdbcType="TINYINT"/>
+        <result column="symlink_target" property="symlinkTarget" jdbcType="VARCHAR"/>
+        <result column="acl" property="acl" jdbcType="VARCHAR"/>
+        <result column="upload_id" property="uploadId" jdbcType="VARCHAR"/>
+        <result column="part_count" property="partCount" jdbcType="INTEGER"/>
+        <result column="position" property="position" jdbcType="BIGINT"/>
+        <result column="restore_status" property="restoreStatus" jdbcType="VARCHAR"/>
+        <result column="expiry_time" property="expiryTime" jdbcType="TIMESTAMP"/>
+        <result column="etag" property="etag" jdbcType="VARCHAR"/>
+        <result column="user_metadata" property="userMetadata" jdbcType="VARCHAR"/>
+        <result column="tags" property="tags" jdbcType="VARCHAR"/>
+        <result column="upload_ip" property="uploadIp" jdbcType="VARCHAR"/>
+        <result column="upload_time" property="uploadTime" jdbcType="TIMESTAMP"/>
+        <result column="last_access_time" property="lastAccessTime" jdbcType="TIMESTAMP"/>
+        <result column="access_count" property="accessCount" jdbcType="BIGINT"/>
+        <result column="download_count" property="downloadCount" jdbcType="BIGINT"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="created_by" property="createdBy" jdbcType="BIGINT"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, object_key, version_id, file_size, file_name, content_type,
+        content_md5, crc64, storage_class, object_type, is_directory, is_symlink,
+        symlink_target, acl, upload_id, part_count, position, restore_status,
+        expiry_time, etag, user_metadata, tags, upload_ip, upload_time, last_access_time,
+        access_count, download_count, status, created_by, created_time, updated_time
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM object_metadata
+        WHERE id = #{id}
+    </select>
+
+    <!-- 根据Bucket名称和对象键查询 -->
+    <select id="selectByBucketAndKey" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM object_metadata
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+        AND version_id IS NULL
+        AND status = 'active'
+        LIMIT 1
+    </select>
+
+    <!-- 根据Bucket名称和对象键及版本ID查询 -->
+    <select id="selectByBucketAndKeyAndVersion" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM object_metadata
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+        AND version_id = #{versionId}
+        AND status = 'active'
+    </select>
+
+    <!-- 根据Bucket名称和前缀查询对象列表 -->
+    <select id="selectByBucketAndPrefix" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM object_metadata
+        WHERE bucket_name = #{bucketName}
+        AND object_key LIKE CONCAT(#{prefix}, '%')
+        AND status = 'active'
+        ORDER BY object_key ASC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <!-- 根据Bucket名称查询所有对象 -->
+    <select id="selectByBucketName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM object_metadata
+        WHERE bucket_name = #{bucketName}
+        AND status = 'active'
+        ORDER BY upload_time DESC
+    </select>
+
+    <!-- 根据创建者查询对象列表 -->
+    <select id="selectByCreatedBy" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM object_metadata
+        WHERE created_by = #{createdBy}
+        AND status = 'active'
+        ORDER BY upload_time DESC
+    </select>
+
+    <!-- 根据状态查询对象列表 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM object_metadata
+        WHERE status = #{status}
+        ORDER BY upload_time DESC
+    </select>
+
+    <!-- 插入对象元数据 -->
+    <insert id="insert" parameterType="com.duda.file.provider.entity.ObjectMetadata"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO object_metadata (
+            bucket_name, object_key, version_id, file_size, file_name, content_type,
+            content_md5, crc64, storage_class, object_type, is_directory, is_symlink,
+            symlink_target, acl, upload_id, part_count, position, restore_status,
+            expiry_time, etag, user_metadata, tags, upload_ip, upload_time,
+            last_access_time, access_count, download_count, status, created_by
+        ) VALUES (
+            #{bucketName}, #{objectKey}, #{versionId}, #{fileSize}, #{fileName}, #{contentType},
+            #{contentMd5}, #{crc64}, #{storageClass}, #{objectType}, #{isDirectory}, #{isSymlink},
+            #{symlinkTarget}, #{acl}, #{uploadId}, #{partCount}, #{position}, #{restoreStatus},
+            #{expiryTime}, #{etag}, #{userMetadata}, #{tags}, #{uploadIp}, #{uploadTime},
+            #{lastAccessTime}, #{accessCount}, #{downloadCount}, #{status}, #{createdBy}
+        )
+    </insert>
+
+    <!-- 批量插入对象元数据 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO object_metadata (
+            bucket_name, object_key, version_id, file_size, file_name, content_type,
+            content_md5, crc64, storage_class, object_type, is_directory, is_symlink,
+            symlink_target, acl, upload_id, part_count, position, restore_status,
+            expiry_time, etag, user_metadata, tags, upload_ip, upload_time,
+            last_access_time, access_count, download_count, status, created_by
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.bucketName}, #{item.objectKey}, #{item.versionId}, #{item.fileSize}, #{item.fileName},
+            #{item.contentType}, #{item.contentMd5}, #{item.crc64}, #{item.storageClass}, #{item.objectType},
+            #{item.isDirectory}, #{item.isSymlink}, #{item.symlinkTarget}, #{item.acl}, #{item.uploadId},
+            #{item.partCount}, #{item.position}, #{item.restoreStatus}, #{item.expiryTime}, #{item.etag},
+            #{item.userMetadata}, #{item.tags}, #{item.uploadIp}, #{item.uploadTime}, #{item.lastAccessTime},
+            #{item.accessCount}, #{item.downloadCount}, #{item.status}, #{item.createdBy})
+        </foreach>
+    </insert>
+
+    <!-- 更新对象元数据 -->
+    <update id="update" parameterType="com.duda.file.provider.entity.ObjectMetadata">
+        UPDATE object_metadata
+        <set>
+            <if test="fileSize != null">file_size = #{fileSize},</if>
+            <if test="fileName != null">file_name = #{fileName},</if>
+            <if test="contentType != null">content_type = #{contentType},</if>
+            <if test="storageClass != null">storage_class = #{storageClass},</if>
+            <if test="acl != null">acl = #{acl},</if>
+            <if test="userMetadata != null">user_metadata = #{userMetadata},</if>
+            <if test="tags != null">tags = #{tags},</if>
+        </set>
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+        AND status = 'active'
+    </update>
+
+    <!-- 更新访问统计 -->
+    <update id="updateAccessStats">
+        UPDATE object_metadata
+        SET access_count = access_count + 1,
+            last_access_time = NOW(),
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+    </update>
+
+    <!-- 更新下载统计 -->
+    <update id="updateDownloadStats">
+        UPDATE object_metadata
+        SET download_count = download_count + 1,
+            last_access_time = NOW(),
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+    </update>
+
+    <!-- 删除对象元数据(软删除) -->
+    <update id="deleteByBucketAndKey">
+        UPDATE object_metadata
+        SET status = 'deleted',
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+        AND object_key = #{objectKey}
+    </update>
+
+    <!-- 批量删除对象元数据(软删除) -->
+    <update id="batchDelete">
+        UPDATE object_metadata
+        SET status = 'deleted',
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+        AND object_key IN
+        <foreach collection="objectKeys" item="key" open="(" separator="," close=")">
+            #{key}
+        </foreach>
+    </update>
+
+    <!-- 统计Bucket中的对象数量 -->
+    <select id="countByBucket" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM object_metadata
+        WHERE bucket_name = #{bucketName}
+        AND status = 'active'
+    </select>
+
+    <!-- 统计Bucket中对象的存储大小 -->
+    <select id="sumSizeByBucket" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(file_size), 0)
+        FROM object_metadata
+        WHERE bucket_name = #{bucketName}
+        AND status = 'active'
+    </select>
+
+</mapper>

@@ -4,6 +4,7 @@
 CREATE TABLE `bucket_config` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '配置ID',
 
+
   -- ==================== 基本信息 ====================
   `bucket_name` VARCHAR(100) NOT NULL COMMENT 'Bucket名称（全局唯一）',
   `bucket_display_name` VARCHAR(200) COMMENT 'Bucket显示名称（用户自定义）',
