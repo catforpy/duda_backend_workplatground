@@ -1,0 +1,53 @@
+# Bootstrap 配置 - 文件API服务
+
+server:
+  port: 8084
+
+spring:
+  application:
+    name: duda-file-api
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  cloud:
+    nacos:
+      server-addr: ${NACOS_HOST:120.26.170.213}:${NACOS_PORT:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+
+      # 服务发现配置
+      discovery:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: FILE_GROUP
+        enabled: true
+        register-enabled: true
+
+      # 配置中心配置
+      config:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: FILE_GROUP
+        file-extension: yml
+        shared-configs:
+          # 公共配置
+          - data-id: common-${spring.profiles.active:dev}.yml
+            group: COMMON_GROUP
+            refresh: true
+
+# Dubbo配置
+dubbo:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    name: dubbo
+    port: -1
+  registry:
+    address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+    parameters:
+      namespace: ${NACOS_NAMESPACE:duda-dev}
+      group: FILE_GROUP
+      use-as-config-center: false
+      use-as-metadata-center: false
+  consumer:
+    check: false
+    timeout: 10000
+    retries: 2
