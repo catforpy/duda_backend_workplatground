@@ -1,0 +1,57 @@
+# JWT配置 - 不同用户类型使用不同的Token策略
+jwt:
+  config:
+    # Token前缀
+    token-prefix: "Bearer "
+
+    # Token在Header中的key
+    header-key: "Authorization"
+
+    # Refresh Token在Redis中的前缀
+    refresh-token-prefix: "auth:refresh:"
+
+    # Access Token黑名单前缀
+    token-blacklist-prefix: "auth:blacklist:"
+
+    # ==================== 不同用户类型的密钥配置 ====================
+    # 生产环境建议从环境变量读取
+    user-type-secrets:
+      # 平台管理员 - 最短过期时间，最高安全级别
+      platform-admin: "duda-platform-admin-secret-key-2026-must-be-at-least-256-bits-for-hs256"
+
+      # 服务商 - 中等过期时间
+      service-provider: "duda-service-provider-secret-key-2026-must-be-at-least-256-bits-for-hs256"
+
+      # 平台账号（普通用户）- 较长过期时间
+      platform-account: "duda-platform-account-secret-key-2026-must-be-at-least-256-bits-for-hs256"
+
+      # 后台管理员 - 短过期时间
+      backend-admin: "duda-backend-admin-secret-key-2026-must-be-at-least-256-bits-for-hs256"
+
+    # ==================== 不同用户类型的Access Token过期时间配置（秒） ====================
+    user-type-access-token-expiration:
+      # 平台管理员: 15分钟（高权限，短有效期）
+      platform-admin: 900
+
+      # 服务商: 2小时
+      service-provider: 7200
+
+      # 平台账号（普通用户）: 7天（低权限，长有效期）
+      platform-account: 604800
+
+      # 后台管理员: 30分钟
+      backend-admin: 1800
+
+    # ==================== 不同用户类型的Refresh Token过期时间配置（秒） ====================
+    user-type-refresh-token-expiration:
+      # 平台管理员: 7天
+      platform-admin: 604800
+
+      # 服务商: 30天
+      service-provider: 2592000
+
+      # 平台账号（普通用户）: 60天
+      platform-account: 5184000
+
+      # 后台管理员: 7天
+      backend-admin: 604800

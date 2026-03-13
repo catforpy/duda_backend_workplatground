@@ -28,6 +28,10 @@ spring:
         group: USER_GROUP
         file-extension: yml
         shared-configs:
+          # JWT配置（不同用户类型的密钥和过期时间）
+          - data-id: jwt-config.yml
+            group: COMMON_GROUP
+            refresh: true
           # 从 Nacos 拉取公共配置（Redis、RocketMQ、MyBatis-Plus等）
           - data-id: common-${spring.profiles.active:dev}.yml
             group: COMMON_GROUP

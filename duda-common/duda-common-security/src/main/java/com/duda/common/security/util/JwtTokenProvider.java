@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * JWT Token工具类
+ * JWT Token工具类 - 支持不同用户类型
  *
  * @author DudaNexus
  * @since 2026-03-11
@@ -30,7 +30,7 @@ public class JwtTokenProvider {
 
     /**
      * 生成Access Token
-     * 包含用户基本信息，有效期较短（15分钟）
+     * 包含用户基本信息，根据用户类型使用不同的密钥和过期时间
      *
      * @param userId 用户ID
      * @param username 用户名
@@ -44,22 +44,34 @@ public class JwtTokenProvider {
         claims.put("userType", userType);
         claims.put("tokenType", "access");
 
-        return createToken(claims, jwtProperties.getAccessTokenExpiration());
+        // 根据用户类型获取对应的过期时间
+        Long expiration = jwtProperties.getUserTypeAccessTokenExpiration(userType);
+
+        logger.info("生成Access Token，userType={}, expiration={}秒", userType, expiration);
+
+        return createToken(claims, expiration, userType);
     }
 
     /**
      * 生成Refresh Token
-     * 只包含用户ID，有效期较长（7天）
+     * 只包含用户ID，根据用户类型使用不同的密钥和过期时间
      *
      * @param userId 用户ID
+     * @param userType 用户类型
      * @return Refresh Token
      */
-    public String generateRefreshToken(Long userId) {
+    public String generateRefreshToken(Long userId, String userType) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
+        claims.put("userType", userType);
         claims.put("tokenType", "refresh");
 
-        return createToken(claims, jwtProperties.getRefreshTokenExpiration());
+        // 根据用户类型获取对应的过期时间
+        Long expiration = jwtProperties.getUserTypeRefreshTokenExpiration(userType);
+
+        logger.info("生成Refresh Token，userType={}, expiration={}秒", userType, expiration);
+
+        return createToken(claims, expiration, userType);
     }
 
     /**
@@ -67,17 +79,21 @@ public class JwtTokenProvider {
      *
      * @param claims 自定义声明
      * @param expiration 有效期（秒）
+     * @param userType 用户类型（用于选择密钥）
      * @return JWT Token
      */
-    private String createToken(Map<String, Object> claims, Long expiration) {
+    private String createToken(Map<String, Object> claims, Long expiration, String userType) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiration * 1000);
+
+        // 根据用户类型获取对应的密钥
+        SecretKey signingKey = getSigningKeyByUserType(userType);
 
         return Jwts.builder()
                 .claims(claims)
                 .issuedAt(now)
                 .expiration(expiryDate)
-                .signWith(getSigningKey())
+                .signWith(signingKey)
                 .compact();
     }
 
@@ -138,14 +154,25 @@ public class JwtTokenProvider {
 
     /**
      * 验证Token是否有效
+     * 自动根据Token中的userType选择对应的密钥进行验证
      *
      * @param token JWT Token
      * @return 是否有效
      */
     public boolean validateToken(String token) {
         try {
+            // 从Token中提取userType
+            String userType = getUserTypeFromToken(token);
+            if (userType == null) {
+                logger.error("无法从Token中提取userType");
+                return false;
+            }
+
+            // 根据userType获取对应的密钥
+            SecretKey signingKey = getSigningKeyByUserType(userType);
+
             Jwts.parser()
-                    .verifyWith(getSigningKey())
+                    .verifyWith(signingKey)
                     .build()
                     .parseSignedClaims(token);
             return true;
@@ -176,14 +203,25 @@ public class JwtTokenProvider {
 
     /**
      * 从Token中获取Claims
+     * 自动根据Token中的userType选择对应的密钥进行解析
      *
      * @param token JWT Token
      * @return Claims
      */
     private Claims getClaimsFromToken(String token) {
         try {
+            // 从Token中提取userType
+            String userType = getUserTypeFromToken(token);
+            if (userType == null) {
+                logger.error("无法从Token中提取userType");
+                return null;
+            }
+
+            // 根据userType获取对应的密钥
+            SecretKey signingKey = getSigningKeyByUserType(userType);
+
             return Jwts.parser()
-                    .verifyWith(getSigningKey())
+                    .verifyWith(signingKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
@@ -194,12 +232,28 @@ public class JwtTokenProvider {
     }
 
     /**
-     * 获取签名密钥
+     * 根据用户类型获取签名密钥
      *
+     * @param userType 用户类型
      * @return 签名密钥
      */
+    private SecretKey getSigningKeyByUserType(String userType) {
+        String secret = jwtProperties.getUserTypeSecret(userType);
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    /**
+     * 获取默认签名密钥（向后兼容）
+     *
+     * @return 签名密钥
+     * @deprecated 使用 getSigningKeyByUserType() 替代
+     */
+    @Deprecated
     private SecretKey getSigningKey() {
-        byte[] keyBytes = jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8);
+        // 使用平台管理员密钥作为默认密钥
+        String secret = jwtProperties.getUserTypeSecret("platform-admin");
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         return Keys.hmacShaKeyFor(keyBytes);
     }
 

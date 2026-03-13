@@ -40,24 +40,24 @@ public class TokenService {
      * @return Token信息
      */
     public TokenDTO generateTokens(Long userId, String username, String userType) {
-        // 生成Access Token
+        // 生成Access Token（根据用户类型使用不同密钥和过期时间）
         String accessToken = jwtTokenProvider.generateAccessToken(userId, username, userType);
 
-        // 生成Refresh Token
-        String refreshToken = jwtTokenProvider.generateRefreshToken(userId);
+        // 生成Refresh Token（根据用户类型使用不同密钥和过期时间）
+        String refreshToken = jwtTokenProvider.generateRefreshToken(userId, userType);
 
-        // 将Refresh Token存储到Redis
+        // 将Refresh Token存储到Redis（根据用户类型使用不同的过期时间）
         String refreshKey = jwtProperties.getRefreshTokenPrefix() + userId;
-        Long refreshExpiration = jwtProperties.getRefreshTokenExpiration();
+        Long refreshExpiration = jwtProperties.getUserTypeRefreshTokenExpiration(userType);
         redisUtils.set(refreshKey, refreshToken, refreshExpiration.intValue());
 
-        logger.info("生成Token成功，userId: {}, username: {}", userId, username);
+        logger.info("生成Token成功，userId: {}, username: {}, userType: {}", userId, username, userType);
 
         return TokenDTO.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .tokenType("Bearer")
-                .expiresIn(jwtProperties.getAccessTokenExpiration().intValue())
+                .expiresIn(jwtProperties.getUserTypeAccessTokenExpiration(userType).intValue())
                 .build();
     }
 
