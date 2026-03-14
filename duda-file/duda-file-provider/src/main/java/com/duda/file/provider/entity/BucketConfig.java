@@ -143,6 +143,63 @@ public class BucketConfig implements Serializable {
      */
     private Boolean lifecycleEnabled;
 
+    // ==================== 新增：OSS高级功能配置（JSON格式） ====================
+
+    /**
+     * 生命周期规则配置（JSON格式）
+     */
+    private String lifecycleConfig;
+
+    /**
+     * CORS规则配置（JSON格式）
+     */
+    private String corsConfig;
+
+    /**
+     * 防盗链配置（JSON格式）
+     */
+    private String refererConfig;
+
+    /**
+     * Bucket策略文档（JSON格式）
+     */
+    private String bucketPolicy;
+
+    /**
+     * 跨区域复制配置（JSON格式）
+     */
+    private String replicationConfig;
+
+    /**
+     * 访问跟踪配置（JSON格式）
+     */
+    private String accessMonitorConfig;
+
+    /**
+     * 存储空间清单配置（JSON格式）
+     */
+    private String inventoryConfig;
+
+    /**
+     * 静态网站托管配置（JSON格式）
+     */
+    private String websiteConfig;
+
+    /**
+     * 日志转存配置（JSON格式）
+     */
+    private String loggingConfig;
+
+    /**
+     * 合规保留策略配置（JSON格式）
+     */
+    private String wormConfig;
+
+    /**
+     * 是否开启传输加速：0-否 1-是
+     */
+    private Boolean transferAccelerationEnabled;
+
     /**
      * 当前文件数量
      */
@@ -242,4 +299,66 @@ public class BucketConfig implements Serializable {
      * 是否删除：0-否 1-是
      */
     private Boolean isDeleted;
+
+    // ==================== 新增：OSS配置同步相关字段 ====================
+
+    /**
+     * 是否激活：0-否 1-是
+     */
+    private Boolean isActive;
+
+    /**
+     * 配置同步时间（最近一次从阿里云同步配置的时间）
+     */
+    private LocalDateTime syncTime;
+
+    /**
+     * ACL配置（JSON格式，从阿里云读取）
+     */
+    private String configAcl;
+
+    /**
+     * Policy配置（JSON格式，从阿里云读取）
+     */
+    private String configPolicy;
+
+    /**
+     * 防盗链配置（JSON格式，从阿里云读取）
+     */
+    private String configReferer;
+
+    /**
+     * CORS配置（JSON格式，从阿里云读取）
+     */
+    private String configCors;
+
+    /**
+     * 生命周期配置（JSON格式，从阿里云读取）
+     */
+    private String configLifecycle;
+
+    /**
+     * 版本控制配置（JSON格式，从阿里云读取）
+     */
+    private String configVersioning;
+
+    /**
+     * 日志转存配置（JSON格式，从阿里云读取）
+     */
+    private String configLogging;
+
+    /**
+     * 静态网站托管配置（JSON格式，从阿里云读取）
+     */
+    private String configWebsite;
+
+    /**
+     * 传输加速配置（JSON格式，从阿里云读取）
+     */
+    private String configTransferAcceleration;
+
+    /**
+     * WORM配置（JSON格式，从阿里云读取）
+     */
+    private String configWorm;
 }

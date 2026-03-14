@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.BucketTrafficLogMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.BucketTrafficLog">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="tenant_id" property="tenantId" jdbcType="BIGINT"/>
+        <result column="upload_traffic" property="uploadTraffic" jdbcType="BIGINT"/>
+        <result column="download_traffic" property="downloadTraffic" jdbcType="BIGINT"/>
+        <result column="total_traffic" property="totalTraffic" jdbcType="BIGINT"/>
+        <result column="request_count" property="requestCount" jdbcType="INTEGER"/>
+        <result column="upload_count" property="uploadCount" jdbcType="INTEGER"/>
+        <result column="download_count" property="downloadCount" jdbcType="INTEGER"/>
+        <result column="head_count" property="headCount" jdbcType="INTEGER"/>
+        <result column="other_count" property="otherCount" jdbcType="INTEGER"/>
+        <result column="image_traffic" property="imageTraffic" jdbcType="BIGINT"/>
+        <result column="video_traffic" property="videoTraffic" jdbcType="BIGINT"/>
+        <result column="document_traffic" property="documentTraffic" jdbcType="BIGINT"/>
+        <result column="other_traffic" property="otherTraffic" jdbcType="BIGINT"/>
+        <result column="stat_date" property="statDate" jdbcType="DATE"/>
+        <result column="stat_hour" property="statHour" jdbcType="TINYINT"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, user_id, tenant_id, upload_traffic, download_traffic, total_traffic,
+        request_count, upload_count, download_count, head_count, other_count,
+        image_traffic, video_traffic, document_traffic, other_traffic,
+        stat_date, stat_hour, created_time
+    </sql>
+
+    <!-- 根据Bucket名称和日期范围查询 -->
+    <select id="selectByBucketNameAndDateRange" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_traffic_log
+        WHERE bucket_name = #{bucketName}
+        AND stat_date BETWEEN #{startDate} AND #{endDate}
+        ORDER BY stat_date DESC, stat_hour DESC
+    </select>
+
+    <!-- 根据用户ID和日期范围查询 -->
+    <select id="selectByUserIdAndDateRange" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_traffic_log
+        WHERE user_id = #{userId}
+        AND stat_date BETWEEN #{startDate} AND #{endDate}
+        ORDER BY stat_date DESC, stat_hour DESC
+    </select>
+
+    <!-- 查询指定日期的总流量 -->
+    <select id="selectTotalTrafficByDate" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(total_traffic), 0)
+        FROM bucket_traffic_log
+        WHERE bucket_name = #{bucketName}
+        AND stat_date = #{statDate}
+    </select>
+
+    <!-- 批量插入流量日志 -->
+    <insert id="batchInsert">
+        INSERT INTO bucket_traffic_log (
+            bucket_name, user_id, tenant_id, upload_traffic, download_traffic, total_traffic,
+            request_count, upload_count, download_count, head_count, other_count,
+            image_traffic, video_traffic, document_traffic, other_traffic,
+            stat_date, stat_hour
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.bucketName}, #{item.userId}, #{item.tenantId}, #{item.uploadTraffic}, #{item.downloadTraffic}, #{item.totalTraffic},
+            #{item.requestCount}, #{item.uploadCount}, #{item.downloadCount}, #{item.headCount}, #{item.otherCount},
+            #{item.imageTraffic}, #{item.videoTraffic}, #{item.documentTraffic}, #{item.otherTraffic},
+            #{item.statDate}, #{item.statHour})
+        </foreach>
+    </insert>
+
+</mapper>

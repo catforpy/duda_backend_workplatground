@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.BucketBillingRecordMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.BucketBillingRecord">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="tenant_id" property="tenantId" jdbcType="BIGINT"/>
+        <result column="billing_cycle" property="billingCycle" jdbcType="VARCHAR"/>
+        <result column="cycle_start" property="cycleStart" jdbcType="DATE"/>
+        <result column="cycle_end" property="cycleEnd" jdbcType="DATE"/>
+        <result column="avg_storage_size" property="avgStorageSize" jdbcType="BIGINT"/>
+        <result column="total_traffic" property="totalTraffic" jdbcType="BIGINT"/>
+        <result column="total_requests" property="totalRequests" jdbcType="INTEGER"/>
+        <result column="total_files" property="totalFiles" jdbcType="INTEGER"/>
+        <result column="storage_fee" property="storageFee" jdbcType="DECIMAL"/>
+        <result column="traffic_fee" property="trafficFee" jdbcType="DECIMAL"/>
+        <result column="request_fee" property="requestFee" jdbcType="DECIMAL"/>
+        <result column="other_fee" property="otherFee" jdbcType="DECIMAL"/>
+        <result column="discount_fee" property="discountFee" jdbcType="DECIMAL"/>
+        <result column="total_fee" property="totalFee" jdbcType="DECIMAL"/>
+        <result column="payment_status" property="paymentStatus" jdbcType="VARCHAR"/>
+        <result column="payment_time" property="paymentTime" jdbcType="TIMESTAMP"/>
+        <result column="payment_method" property="paymentMethod" jdbcType="VARCHAR"/>
+        <result column="transaction_id" property="transactionId" jdbcType="VARCHAR"/>
+        <result column="remark" property="remark" jdbcType="VARCHAR"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+        <result column="is_deleted" property="isDeleted" jdbcType="TINYINT"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, user_id, tenant_id, billing_cycle, cycle_start, cycle_end,
+        avg_storage_size, total_traffic, total_requests, total_files,
+        storage_fee, traffic_fee, request_fee, other_fee, discount_fee, total_fee,
+        payment_status, payment_time, payment_method, transaction_id, remark,
+        created_time, updated_time, is_deleted
+    </sql>
+
+    <!-- 根据Bucket名称查询账单列表 -->
+    <select id="selectByBucketName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_billing_record
+        WHERE bucket_name = #{bucketName}
+        AND is_deleted = 0
+        ORDER BY cycle_end DESC
+    </select>
+
+    <!-- 根据用户ID查询账单列表 -->
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_billing_record
+        WHERE user_id = #{userId}
+        AND is_deleted = 0
+        ORDER BY cycle_end DESC
+    </select>
+
+    <!-- 根据支付状态查询 -->
+    <select id="selectByPaymentStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_billing_record
+        WHERE payment_status = #{paymentStatus}
+        AND is_deleted = 0
+        ORDER BY cycle_end DESC
+    </select>
+
+    <!-- 根据周期查询账单 -->
+    <select id="selectByBucketNameAndCycle" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_billing_record
+        WHERE bucket_name = #{bucketName}
+        AND cycle_start = #{cycleStart}
+        AND cycle_end = #{cycleEnd}
+        AND is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <!-- 查询逾期未支付账单 -->
+    <select id="selectOverdueRecords" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_billing_record
+        WHERE payment_status = 'OVERDUE'
+        AND is_deleted = 0
+        ORDER BY cycle_end ASC
+    </select>
+
+    <!-- 更新支付状态 -->
+    <update id="updatePaymentStatus">
+        UPDATE bucket_billing_record
+        SET payment_status = #{paymentStatus},
+            payment_method = #{paymentMethod},
+            transaction_id = #{transactionId},
+            payment_time = NOW(),
+            updated_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+</mapper>

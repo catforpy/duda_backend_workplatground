@@ -1,11 +1,21 @@
 package com.duda.user.listener;
 
+import com.alibaba.fastjson2.JSON;
 import com.duda.common.mq.message.UserCacheMsg;
-import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
-import org.apache.rocketmq.spring.core.RocketMQListener;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageExt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 /**
  * 用户缓存变更消息监听器
@@ -20,36 +30,78 @@ import org.springframework.stereotype.Component;
  * @since 2026-03-13
  */
 @Component
-@RocketMQMessageListener(
-        topic = "UserCacheAsyncDelete",
-        consumerGroup = "user-cache-sync-group",
-        consumeThreadNumber = 5
-)
-public class UserCacheChangeListener implements RocketMQListener<UserCacheMsg> {
+public class UserCacheChangeListener {
 
     private static final Logger logger = LoggerFactory.getLogger(UserCacheChangeListener.class);
 
-    @Override
-    public void onMessage(UserCacheMsg message) {
-        try {
-            logger.info("=== 收到用户缓存变更消息 ===");
-            logger.info("用户ID: {}", message.getUserId());
-            logger.info("操作类型: {}", message.getOperation());
-            logger.info("变更时间: {}", message.getChangeTime());
-            logger.info("变更字段: {}", message.getChangedFields());
-            logger.info("变更原因: {}", message.getReason());
-            logger.info("消息ID: {}", message.getMessageId());
-            logger.info("======================");
+    @Value("${rocketmq.name-server}")
+    private String nameServer;
 
-            // TODO: 清除本服务中关于该用户的所有缓存
-            clearUserCache(message.getUserId());
+    private DefaultMQPushConsumer consumer;
 
-            logger.info("✅ 用户缓存变更消息处理成功！userId={}", message.getUserId());
+    @PostConstruct
+    public void init() throws Exception {
+        consumer = new DefaultMQPushConsumer();
+        consumer.setVipChannelEnabled(false);
+        consumer.setNamesrvAddr(nameServer);
+        consumer.setConsumerGroup("user-cache-sync-group");
+        consumer.setConsumeMessageBatchMaxSize(10);
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_LAST_OFFSET);
 
-        } catch (Exception e) {
-            logger.error("❌ 处理用户缓存变更消息失败！userId={}, error={}",
-                message.getUserId(), e.getMessage(), e);
-            throw new RuntimeException("处理缓存变更消息失败", e);
+        // 订阅主题
+        consumer.subscribe("UserCacheAsyncDelete", "*");
+
+        // 设置消息监听器
+        consumer.setMessageListener(new MessageListenerConcurrently() {
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(
+                    List<MessageExt> msgs,
+                    ConsumeConcurrentlyContext context) {
+
+                for (MessageExt msg : msgs) {
+                    try {
+                        String msgBody = new String(msg.getBody());
+                        UserCacheMsg message = JSON.parseObject(msgBody, UserCacheMsg.class);
+
+                        logger.info("╔════════════════════════════════════════╗");
+                        logger.info("║   收到用户缓存变更消息                     ║");
+                        logger.info("╚════════════════════════════════════════╝");
+                        logger.info("用户ID: {}", message.getUserId());
+                        logger.info("操作类型: {}", message.getOperation());
+                        logger.info("变更时间: {}", message.getChangeTime());
+                        logger.info("变更字段: {}", message.getChangedFields());
+                        logger.info("变更原因: {}", message.getReason());
+
+                        // TODO: 清除本服务中关于该用户的所有缓存
+                        clearUserCache(message.getUserId());
+
+                        logger.info("✓ 用户缓存变更消息处理成功！userId={}", message.getUserId());
+
+                    } catch (Exception e) {
+                        logger.error("✗ 处理用户缓存变更消息失败", e);
+                        return ConsumeConcurrentlyStatus.RECONSUME_LATER;
+                    }
+                }
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            }
+        });
+
+        // 启动消费者
+        consumer.start();
+        System.out.println();
+        System.out.println("╔════════════════════════════════════════╗");
+        System.out.println("║   UserCacheChangeListener 启动成功        ║");
+        System.out.println("║   Topic: UserCacheAsyncDelete            ║");
+        System.out.println("║   Group: user-cache-sync-group           ║");
+        System.out.println("╚════════════════════════════════════════╝");
+        System.out.println();
+    }
+
+    @PreDestroy
+    public void destroy() {
+        if (consumer != null) {
+            consumer.shutdown();
+            logger.info("✓ UserCacheChangeListener 已关闭");
         }
     }
 

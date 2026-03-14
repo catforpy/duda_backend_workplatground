@@ -1,7 +1,113 @@
+## Bootstrap 配置 - 用户服务
+#
+#server:
+#  port: 8082
+#
+#spring:
+#  application:
+#    name: duda-user-provider
+#  profiles:
+#    active: ${SPRING_PROFILES_ACTIVE:dev}
+#
+#  cloud:
+#    nacos:
+#      server-addr: ${NACOS_HOST:120.26.170.213}:${NACOS_PORT:8848}
+#      username: ${NACOS_USERNAME:nacos}
+#      password: ${NACOS_PASSWORD:nacos}
+#
+#      # 服务发现配置
+#      discovery:
+#        namespace: ${NACOS_NAMESPACE:duda-dev}
+#        group: USER_GROUP
+#        enabled: true
+#        register-enabled: true
+#        service: ${spring.application.name}
+#        naming-load-cache-at-start: true
+#
+#      # 配置中心配置
+#      config:
+#        namespace: ${NACOS_NAMESPACE:duda-dev}
+#        group: USER_GROUP
+#        file-extension: yml
+#        shared-configs:
+#          # 从 Nacos 拉取公共配置（Redis、RocketMQ、MyBatis-Plus等）
+#          - data-id: common-${spring.profiles.active:dev}.yml
+#            group: COMMON_GROUP
+#            refresh: true
+#
+#  # 云服务器数据库配置 - 主从分离 + 分表
+#  # 暂时使用单库，先测试RPC调用
+#  datasource:
+#    driver-class-name: com.mysql.cj.jdbc.Driver
+#    url: jdbc:mysql://120.26.170.213:3306/duda_nexus?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8
+#    username: root
+#    password: duda2024
+#    type: com.alibaba.druid.pool.DruidDataSource
+#    druid:
+#      initial-size: 5
+#      min-idle: 5
+#      max-active: 20
+#      max-wait: 60000
+#      test-while-idle: true
+#      test-on-borrow: false
+#      test-on-return: false
+#      validation-query: SELECT 1
+#      time-between-eviction-runs-millis: 60000
+#      min-evictable-idle-time-millis: 300000
+#
+## Dubbo配置
+#dubbo:
+#  application:
+#    name: ${spring.application.name}
+#  protocol:
+#    name: dubbo
+#    port: -1  # -1表示自动分配端口
+#
+#  # 配置多个 Registry
+#  registries:
+#    # Registry 1: 基础设施服务（INFRA_GROUP）- 用于调用ID生成器
+#    infraRegistry:
+#      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+#      parameters:
+#        namespace: ${NACOS_NAMESPACE:duda-dev}
+#        group: INFRA_GROUP
+#        use-as-config-center: false
+#        use-as-metadata-center: false
+#      default: false  # 不是默认 registry
+#
+#    # Registry 2: 业务服务（USER_GROUP）- 默认 registry
+#    userRegistry:
+#      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+#      parameters:
+#        namespace: ${NACOS_NAMESPACE:duda-dev}
+#        group: USER_GROUP
+#        use-as-config-center: false
+#        use-as-metadata-center: false
+#      default: true  # 默认 registry
+#
+#  scan:
+#    base-packages: com.duda.user.rpc
+#  consumer:
+#    check: false
+#    timeout: 5000
+#    retries: 2
+#
+#
+#
+## ✅ 健康检查配置（Actuator）
+#management:
+#  endpoints:
+#    web:
+#      exposure:
+#        include: health,info,metrics
+#  endpoint:
+#    health:
+#      show-details: when-authorized
+#      show-components: always
+#  health:
+#    defaults:
+#      enabled: true
 # Bootstrap 配置 - 用户服务
-
-server:
-  port: 8082
 
 spring:
   application:
@@ -21,97 +127,30 @@ spring:
         group: USER_GROUP
         enabled: true
         register-enabled: true
-        service: ${spring.application.name}
-        naming-load-cache-at-start: true
 
       # 配置中心配置
       config:
         namespace: ${NACOS_NAMESPACE:duda-dev}
         group: USER_GROUP
         file-extension: yml
+        refresh-enabled: true
         shared-configs:
-          # 从 Nacos 拉取公共配置（Redis、RocketMQ、MyBatis-Plus等）
+          # 从 Nacos 拉取公共配置
           - data-id: common-${spring.profiles.active:dev}.yml
             group: COMMON_GROUP
             refresh: true
 
-  # 云服务器数据库配置 - 主从分离 + 分表
-  # 暂时使用单库，先测试RPC调用
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://120.26.170.213:3306/duda_nexus?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8
-    username: root
-    password: duda2024
-    type: com.alibaba.druid.pool.DruidDataSource
-    druid:
-      initial-size: 5
-      min-idle: 5
-      max-active: 20
-      max-wait: 60000
-      test-while-idle: true
-      test-on-borrow: false
-      test-on-return: false
-      validation-query: SELECT 1
-      time-between-eviction-runs-millis: 60000
-      min-evictable-idle-time-millis: 300000
-
-# Dubbo配置
+# Dubbo 最小配置（只保留启动必需的）
 dubbo:
   application:
     name: ${spring.application.name}
   protocol:
     name: dubbo
-    port: -1  # -1表示自动分配端口
-
-  # 配置多个 Registry
-  registries:
-    # Registry 1: 基础设施服务（INFRA_GROUP）- 用于调用ID生成器
-    infraRegistry:
-      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
-      parameters:
-        namespace: ${NACOS_NAMESPACE:duda-dev}
-        group: INFRA_GROUP
-        use-as-config-center: false
-        use-as-metadata-center: false
-      default: false  # 不是默认 registry
-
-    # Registry 2: 业务服务（USER_GROUP）- 默认 registry
-    userRegistry:
-      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
-      parameters:
-        namespace: ${NACOS_NAMESPACE:duda-dev}
-        group: USER_GROUP
-        use-as-config-center: false
-        use-as-metadata-center: false
-      default: true  # 默认 registry
-
+    port: -1
+  registry:
+    address: nacos://${spring.cloud.nacos.server-addr}
   scan:
     base-packages: com.duda.user.rpc
   consumer:
     check: false
     timeout: 5000
-    retries: 2
-
-# RocketMQ 配置
-rocketmq:
-  name-server: ${ROCKETMQ_HOST:120.26.170.213}:${ROCKETMQ_PORT:9876}
-  producer:
-    group: user-producer-group
-    send-message-timeout: 3000
-    retry-times-when-send-failed: 2
-    max-message-size: 4194304  # 4MB
-    compress-msg-body-over-howmuch: 4096
-
-# ✅ 健康检查配置（Actuator）
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-  endpoint:
-    health:
-      show-details: when-authorized
-      show-components: always
-  health:
-    defaults:
-      enabled: true

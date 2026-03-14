@@ -25,11 +25,13 @@
     </modules>
 
     <properties>
-        <aliyun-oss.version>3.17.4</aliyun-oss.version>
-        <aliyun-sts.version>3.1.0</aliyun-sts.version>
+        <aliyun-oss.version>3.18.4</aliyun-oss.version>
+        <aliyun-sts.version>3.1.2</aliyun-sts.version>
+        <aliyun-core.version>4.6.4</aliyun-core.version>
         <qiniu-sdk.version>7.13.1</qiniu-sdk.version>
         <tencent-cos-sdk.version>5.6.155</tencent-cos-sdk.version>
         <minio.version>8.5.7</minio.version>
+        <jaxb.version>2.3.1</jaxb.version>
     </properties>
 
     <dependencyManagement>
@@ -46,6 +48,34 @@
                 <groupId>com.aliyun</groupId>
                 <artifactId>aliyun-java-sdk-sts</artifactId>
                 <version>${aliyun-sts.version}</version>
+            </dependency>
+
+            <!-- 阿里云 Core SDK (STS依赖) -->
+            <dependency>
+                <groupId>com.aliyun</groupId>
+                <artifactId>aliyun-java-sdk-core</artifactId>
+                <version>${aliyun-core.version}</version>
+            </dependency>
+
+            <!-- JAXB API (Java 9+需要) -->
+            <dependency>
+                <groupId>javax.xml.bind</groupId>
+                <artifactId>jaxb-api</artifactId>
+                <version>${jaxb.version}</version>
+            </dependency>
+
+            <!-- JAXB Runtime -->
+            <dependency>
+                <groupId>org.glassfish.jaxb</groupId>
+                <artifactId>jaxb-runtime</artifactId>
+                <version>2.3.3</version>
+            </dependency>
+
+            <!-- Java Activation -->
+            <dependency>
+                <groupId>javax.activation</groupId>
+                <artifactId>activation</artifactId>
+                <version>1.1.1</version>
             </dependency>
 
             <!-- 千牛云 SDK -->

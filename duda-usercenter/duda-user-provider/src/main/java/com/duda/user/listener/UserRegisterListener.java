@@ -1,11 +1,21 @@
 package com.duda.user.listener;
 
+import com.alibaba.fastjson2.JSON;
 import com.duda.common.mq.message.UserRegisterMsg;
-import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
-import org.apache.rocketmq.spring.core.RocketMQListener;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageExt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 /**
  * 用户注册消息监听器
@@ -19,50 +29,92 @@ import org.springframework.stereotype.Component;
  * @since 2026-03-13
  */
 @Component
-@RocketMQMessageListener(
-        topic = "UserRegister",
-        consumerGroup = "user-register-welcome-group",
-        consumeThreadNumber = 5
-)
-public class UserRegisterListener implements RocketMQListener<UserRegisterMsg> {
+public class UserRegisterListener {
 
     private static final Logger logger = LoggerFactory.getLogger(UserRegisterListener.class);
 
-    @Override
-    public void onMessage(UserRegisterMsg message) {
-        try {
-            logger.info("=== 收到用户注册消息 ===");
-            logger.info("用户ID: {}", message.getUserId());
-            logger.info("用户名: {}", message.getUsername());
-            logger.info("用户类型: {}", message.getUserType());
-            logger.info("真实姓名: {}", message.getRealName());
-            logger.info("手机号: {}", message.getPhone());
-            logger.info("邮箱: {}", message.getEmail());
-            logger.info("注册时间: {}", message.getRegisterTime());
-            logger.info("注册IP: {}", message.getRegisterIp());
-            logger.info("注册方式: {}", message.getRegisterType());
-            logger.info("邀请码: {}", message.getInviteCode());
-            logger.info("消息ID: {}", message.getMessageId());
-            logger.info("======================");
+    @Value("${rocketmq.name-server}")
+    private String nameServer;
 
-            // 1. 发送欢迎短信
-            sendWelcomeSms(message);
+    private DefaultMQPushConsumer consumer;
 
-            // 2. 发送欢迎邮件
-            sendWelcomeEmail(message);
+    @PostConstruct
+    public void init() throws Exception {
+        consumer = new DefaultMQPushConsumer();
+        consumer.setVipChannelEnabled(false);
+        consumer.setNamesrvAddr(nameServer);
+        consumer.setConsumerGroup("user-register-welcome-group");
+        consumer.setConsumeMessageBatchMaxSize(10);
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_LAST_OFFSET);
 
-            // 3. 发送新用户优惠券
-            sendNewUserCoupons(message);
+        // 订阅主题
+        consumer.subscribe("UserRegister", "*");
 
-            // 4. 初始化用户数据
-            initUserData(message);
+        // 设置消息监听器
+        consumer.setMessageListener(new MessageListenerConcurrently() {
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(
+                    List<MessageExt> msgs,
+                    ConsumeConcurrentlyContext context) {
 
-            logger.info("✅ 用户注册消息处理成功！userId={}", message.getUserId());
+                for (MessageExt msg : msgs) {
+                    try {
+                        String msgBody = new String(msg.getBody());
+                        UserRegisterMsg message = JSON.parseObject(msgBody, UserRegisterMsg.class);
 
-        } catch (Exception e) {
-            logger.error("❌ 处理用户注册消息失败！userId={}, error={}",
-                message.getUserId(), e.getMessage(), e);
-            throw new RuntimeException("处理注册消息失败", e);
+                        logger.info("╔════════════════════════════════════════╗");
+                        logger.info("║   收到用户注册消息                         ║");
+                        logger.info("╚════════════════════════════════════════╝");
+                        logger.info("用户ID: {}", message.getUserId());
+                        logger.info("用户名: {}", message.getUsername());
+                        logger.info("用户类型: {}", message.getUserType());
+                        logger.info("真实姓名: {}", message.getRealName());
+                        logger.info("手机号: {}", message.getPhone());
+                        logger.info("邮箱: {}", message.getEmail());
+                        logger.info("注册时间: {}", message.getRegisterTime());
+                        logger.info("注册IP: {}", message.getRegisterIp());
+                        logger.info("注册方式: {}", message.getRegisterType());
+                        logger.info("邀请码: {}", message.getInviteCode());
+
+                        // 1. 发送欢迎短信
+                        sendWelcomeSms(message);
+
+                        // 2. 发送欢迎邮件
+                        sendWelcomeEmail(message);
+
+                        // 3. 发送新用户优惠券
+                        sendNewUserCoupons(message);
+
+                        // 4. 初始化用户数据
+                        initUserData(message);
+
+                        logger.info("✓ 用户注册消息处理成功！userId={}", message.getUserId());
+
+                    } catch (Exception e) {
+                        logger.error("✗ 处理用户注册消息失败", e);
+                        return ConsumeConcurrentlyStatus.RECONSUME_LATER;
+                    }
+                }
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            }
+        });
+
+        // 启动消费者
+        consumer.start();
+        System.out.println();
+        System.out.println("╔════════════════════════════════════════╗");
+        System.out.println("║   UserRegisterListener 启动成功           ║");
+        System.out.println("║   Topic: UserRegister                    ║");
+        System.out.println("║   Group: user-register-welcome-group      ║");
+        System.out.println("╚════════════════════════════════════════╝");
+        System.out.println();
+    }
+
+    @PreDestroy
+    public void destroy() {
+        if (consumer != null) {
+            consumer.shutdown();
+            logger.info("✓ UserRegisterListener 已关闭");
         }
     }
 

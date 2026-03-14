@@ -229,4 +229,144 @@ public class TemporaryAdapter implements StorageService {
         log.warn("临时适配器: getSymlink方法未实现，返回空字符串");
         return "";
     }
+
+    // ==================== Bucket高级配置管理 ====================
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketLifecycleResultDTO setBucketLifecycle(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketLifecycleReqDTO config) {
+        log.warn("临时适配器: setBucketLifecycle方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketLifecycleResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketCORSResultDTO setBucketCORS(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketCORSReqDTO config) {
+        log.warn("临时适配器: setBucketCORS方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketCORSResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketRefererResultDTO setBucketReferer(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketRefererReqDTO config) {
+        log.warn("临时适配器: setBucketReferer方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketRefererResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketPolicyResultDTO setBucketPolicy(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketPolicyReqDTO config) {
+        log.warn("临时适配器: setBucketPolicy方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketPolicyResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketReplicationResultDTO setBucketReplication(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketReplicationReqDTO config) {
+        log.warn("临时适配器: setBucketReplication方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketReplicationResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketVersioningResultDTO setBucketVersioning(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketVersioningReqDTO config) {
+        log.warn("临时适配器: setBucketVersioning方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketVersioningResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketWebsiteResultDTO setBucketWebsite(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketWebsiteReqDTO config) {
+        log.warn("临时适配器: setBucketWebsite方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketWebsiteResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketLoggingResultDTO setBucketLogging(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketLoggingReqDTO config) {
+        log.warn("临时适配器: setBucketLogging方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketLoggingResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketWORMResultDTO setBucketWORM(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketWORMReqDTO config) {
+        log.warn("临时适配器: setBucketWORM方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketWORMResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketAccessMonitorResultDTO setBucketAccessMonitor(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketAccessMonitorReqDTO config) {
+        log.warn("临时适配器: setBucketAccessMonitor方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketAccessMonitorResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketInventoryResultDTO setBucketInventory(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketInventoryReqDTO config) {
+        log.warn("临时适配器: setBucketInventory方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketInventoryResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.bucket.SetBucketTransferAccelerationResultDTO setBucketTransferAcceleration(
+            String bucketName,
+            com.duda.file.dto.bucket.SetBucketTransferAccelerationReqDTO config) {
+        log.warn("临时适配器: setBucketTransferAcceleration方法未实现，返回空结果");
+        return com.duda.file.dto.bucket.SetBucketTransferAccelerationResultDTO.builder().build();
+    }
+
+    // ==================== 对象标签管理 ====================
+
+    @Override
+    public com.duda.file.dto.object.SetObjectTaggingResultDTO setObjectTagging(
+            String bucketName,
+            com.duda.file.dto.object.SetObjectTaggingReqDTO config) {
+        log.warn("临时适配器: setObjectTagging方法未实现，返回空结果");
+        return com.duda.file.dto.object.SetObjectTaggingResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.object.GetObjectTaggingResultDTO getObjectTagging(
+            String bucketName,
+            String objectKey) {
+        log.warn("临时适配器: getObjectTagging方法未实现，返回空结果");
+        return com.duda.file.dto.object.GetObjectTaggingResultDTO.builder().build();
+    }
+
+    @Override
+    public com.duda.file.dto.object.GetObjectTaggingResultDTO getObjectTagging(
+            String bucketName,
+            String objectKey,
+            String versionId) {
+        log.warn("临时适配器: getObjectTagging方法未实现，返回空结果");
+        return com.duda.file.dto.object.GetObjectTaggingResultDTO.builder().build();
+    }
+
+    @Override
+    public void deleteObjectTagging(String bucketName, String objectKey) {
+        log.warn("临时适配器: deleteObjectTagging方法未实现");
+    }
+
+    // ==================== 版本控制管理 ====================
+
+    @Override
+    public com.duda.file.dto.object.ListVersionsResultDTO listVersions(
+            String bucketName,
+            com.duda.file.dto.object.ListVersionsReqDTO config) {
+        log.warn("临时适配器: listVersions方法未实现，返回空结果");
+        return com.duda.file.dto.object.ListVersionsResultDTO.builder().build();
+    }
 }

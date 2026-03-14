@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.BucketStorageLogMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.BucketStorageLog">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="tenant_id" property="tenantId" jdbcType="BIGINT"/>
+        <result column="file_count" property="fileCount" jdbcType="INTEGER"/>
+        <result column="storage_size" property="storageSize" jdbcType="BIGINT"/>
+        <result column="storage_quota" property="storageQuota" jdbcType="BIGINT"/>
+        <result column="usage_percentage" property="usagePercentage" jdbcType="DECIMAL"/>
+        <result column="standard_size" property="standardSize" jdbcType="BIGINT"/>
+        <result column="ia_size" property="iaSize" jdbcType="BIGINT"/>
+        <result column="archive_size" property="archiveSize" jdbcType="BIGINT"/>
+        <result column="cold_archive_size" property="coldArchiveSize" jdbcType="BIGINT"/>
+        <result column="stat_date" property="statDate" jdbcType="DATE"/>
+        <result column="stat_hour" property="statHour" jdbcType="TINYINT"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, user_id, tenant_id, file_count, storage_size, storage_quota, usage_percentage,
+        standard_size, ia_size, archive_size, cold_archive_size, stat_date, stat_hour, created_time
+    </sql>
+
+    <!-- 根据Bucket名称和日期范围查询 -->
+    <select id="selectByBucketNameAndDateRange" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_storage_log
+        WHERE bucket_name = #{bucketName}
+        AND stat_date BETWEEN #{startDate} AND #{endDate}
+        ORDER BY stat_date DESC, stat_hour DESC
+    </select>
+
+    <!-- 根据用户ID和日期范围查询 -->
+    <select id="selectByUserIdAndDateRange" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_storage_log
+        WHERE user_id = #{userId}
+        AND stat_date BETWEEN #{startDate} AND #{endDate}
+        ORDER BY stat_date DESC, stat_hour DESC
+    </select>
+
+    <!-- 查询最新的存储统计 -->
+    <select id="selectLatest" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_storage_log
+        WHERE bucket_name = #{bucketName}
+        ORDER BY stat_date DESC, stat_hour DESC
+        LIMIT 1
+    </select>
+
+    <!-- 批量插入存储日志 -->
+    <insert id="batchInsert">
+        INSERT INTO bucket_storage_log (
+            bucket_name, user_id, tenant_id, file_count, storage_size, storage_quota, usage_percentage,
+            standard_size, ia_size, archive_size, cold_archive_size, stat_date, stat_hour
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.bucketName}, #{item.userId}, #{item.tenantId}, #{item.fileCount}, #{item.storageSize},
+            #{item.storageQuota}, #{item.usagePercentage}, #{item.standardSize}, #{item.iaSize},
+            #{item.archiveSize}, #{item.coldArchiveSize}, #{item.statDate}, #{item.statHour})
+        </foreach>
+    </insert>
+
+</mapper>

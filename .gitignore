@@ -61,6 +61,8 @@ HELP.md
 .env
 *.env.local
 *.env.*.local
+accesskey.txt
+*.txt
 
 # Backup files
 *.backup

@@ -358,4 +358,229 @@ public interface StorageService {
      * @return 目标对象键
      */
     String getSymlink(String bucketName, String symlinkKey);
+
+    // ==================== Bucket高级配置管理 ====================
+
+    /**
+     * 设置Bucket生命周期规则
+     *
+     * @param bucketName Bucket名称
+     * @param config 生命周期配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketLifecycleResultDTO setBucketLifecycle(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketLifecycleReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket CORS规则
+     *
+     * @param bucketName Bucket名称
+     * @param config CORS配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketCORSResultDTO setBucketCORS(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketCORSReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket防盗链规则
+     *
+     * @param bucketName Bucket名称
+     * @param config 防盗链配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketRefererResultDTO setBucketReferer(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketRefererReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket策略
+     *
+     * @param bucketName Bucket名称
+     * @param config Policy配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketPolicyResultDTO setBucketPolicy(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketPolicyReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket跨区域复制
+     *
+     * @param bucketName Bucket名称
+     * @param config 复制配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketReplicationResultDTO setBucketReplication(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketReplicationReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket版本控制
+     *
+     * @param bucketName Bucket名称
+     * @param config 版本控制配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketVersioningResultDTO setBucketVersioning(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketVersioningReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket静态网站托管
+     *
+     * @param bucketName Bucket名称
+     * @param config 网站托管配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketWebsiteResultDTO setBucketWebsite(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketWebsiteReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket日志转存
+     *
+     * @param bucketName Bucket名称
+     * @param config 日志转存配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketLoggingResultDTO setBucketLogging(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketLoggingReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket合规保留策略(WORM)
+     *
+     * @param bucketName Bucket名称
+     * @param config WORM配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketWORMResultDTO setBucketWORM(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketWORMReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket访问跟踪
+     *
+     * @param bucketName Bucket名称
+     * @param config 访问跟踪配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketAccessMonitorResultDTO setBucketAccessMonitor(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketAccessMonitorReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket存储空间清单
+     *
+     * @param bucketName Bucket名称
+     * @param config 清单配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketInventoryResultDTO setBucketInventory(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketInventoryReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 设置Bucket传输加速
+     *
+     * @param bucketName Bucket名称
+     * @param config 传输加速配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.bucket.SetBucketTransferAccelerationResultDTO setBucketTransferAcceleration(
+        String bucketName,
+        com.duda.file.dto.bucket.SetBucketTransferAccelerationReqDTO config
+    ) throws StorageException;
+
+    // ==================== 对象标签管理 ====================
+
+    /**
+     * 设置对象标签
+     *
+     * @param bucketName Bucket名称
+     * @param config 对象标签配置
+     * @return 设置结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.object.SetObjectTaggingResultDTO setObjectTagging(
+        String bucketName,
+        com.duda.file.dto.object.SetObjectTaggingReqDTO config
+    ) throws StorageException;
+
+    /**
+     * 获取对象标签
+     *
+     * @param bucketName Bucket名称
+     * @param objectKey 对象键
+     * @return 对象标签结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.object.GetObjectTaggingResultDTO getObjectTagging(
+        String bucketName,
+        String objectKey
+    ) throws StorageException;
+
+    /**
+     * 获取对象标签(指定版本)
+     *
+     * @param bucketName Bucket名称
+     * @param objectKey 对象键
+     * @param versionId 版本ID
+     * @return 对象标签结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.object.GetObjectTaggingResultDTO getObjectTagging(
+        String bucketName,
+        String objectKey,
+        String versionId
+    ) throws StorageException;
+
+    /**
+     * 删除对象标签
+     *
+     * @param bucketName Bucket名称
+     * @param objectKey 对象键
+     * @throws StorageException 存储异常
+     */
+    void deleteObjectTagging(String bucketName, String objectKey) throws StorageException;
+
+    // ==================== 版本控制管理 ====================
+
+    /**
+     * 列出对象版本
+     *
+     * @param bucketName Bucket名称
+     * @param config 列出版本请求配置
+     * @return 对象版本列表结果
+     * @throws StorageException 存储异常
+     */
+    com.duda.file.dto.object.ListVersionsResultDTO listVersions(
+        String bucketName,
+        com.duda.file.dto.object.ListVersionsReqDTO config
+    ) throws StorageException;
 }

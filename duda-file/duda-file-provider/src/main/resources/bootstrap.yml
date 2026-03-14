@@ -24,28 +24,25 @@ spring:
         namespace: ${NACOS_NAMESPACE:duda-dev}
         group: DUDA_FILE_GROUP
         file-extension: yml
-        name: duda-file-provider
         refresh-enabled: true
         shared-configs:
-          # 公共配置
+          # 公共配置（Redis、RocketMQ、MyBatis-Plus等）
           - data-id: common-${spring.profiles.active:dev}.yml
             group: COMMON_GROUP
             refresh: true
 
-# Dubbo配置
+# Dubbo 最小配置（只保留启动必需的）
 dubbo:
   application:
     name: ${spring.application.name}
   protocol:
     name: dubbo
-    port: -1  # -1表示自动分配端口
+    port: -1
   registry:
-    address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
-    parameters:
-      namespace: ${NACOS_NAMESPACE:duda-dev}
-      group: DUDA_FILE_GROUP
-      use-as-config-center: false
-      use-as-metadata-center: false
+    address: nacos://${spring.cloud.nacos.server-addr}
+  scan:
+    base-packages: com.duda.file.provider
   provider:
     timeout: 10000
     retries: 0
+

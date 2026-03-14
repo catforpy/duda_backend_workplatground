@@ -1,0 +1,7 @@
+# RocketMQ 测试配置
+rocketmq:
+  name-server: 120.26.170.213:9876
+  producer:
+    group: file-producer-group
+    send-message-timeout: 3000
+    retry-times-when-send-failed: 2

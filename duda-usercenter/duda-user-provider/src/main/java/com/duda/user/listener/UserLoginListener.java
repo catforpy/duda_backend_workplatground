@@ -1,11 +1,21 @@
 package com.duda.user.listener;
 
+import com.alibaba.fastjson2.JSON;
 import com.duda.common.mq.message.UserLoginMsg;
-import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
-import org.apache.rocketmq.spring.core.RocketMQListener;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageExt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 /**
  * 用户登录消息监听器
@@ -19,60 +29,91 @@ import org.springframework.stereotype.Component;
  * @since 2026-03-13
  */
 @Component
-@RocketMQMessageListener(
-        topic = "UserLogin",
-        consumerGroup = "user-login-log-group",
-        consumeThreadNumber = 5
-)
-public class UserLoginListener implements RocketMQListener<UserLoginMsg> {
+public class UserLoginListener {
 
     private static final Logger logger = LoggerFactory.getLogger(UserLoginListener.class);
 
-    @Override
-    public void onMessage(UserLoginMsg message) {
-        try {
-            logger.info("=== 收到用户登录消息 ===");
-            logger.info("用户ID: {}", message.getUserId());
-            logger.info("用户名: {}", message.getUsername());
-            logger.info("用户类型: {}", message.getUserType());
-            logger.info("登录时间: {}", message.getLoginTime());
-            logger.info("登录IP: {}", message.getLoginIp());
-            logger.info("客户端类型: {}", message.getClientType());
-            logger.info("设备ID: {}", message.getDeviceId());
-            logger.info("是否首次登录: {}", message.getIsFirstLogin());
-            logger.info("登录方式: {}", message.getLoginType());
-            logger.info("消息ID: {}", message.getMessageId());
-            logger.info("======================");
+    @Value("${rocketmq.name-server}")
+    private String nameServer;
 
-            // TODO: 实际业务处理
-            // 1. 记录登录日志到数据库（user_login_logs 表）
-            // 2. 风控检测（检查异常登录、异地登录等）
-            // 3. 更新推荐算法（根据登录行为调整推荐）
+    private DefaultMQPushConsumer consumer;
 
-            // 示例：记录到数据库
-            // UserLoginLogPO logPO = new UserLoginLogPO();
-            // logPO.setUserId(message.getUserId());
-            // logPO.setUsername(message.getUsername());
-            // logPO.setLoginIp(message.getLoginIp());
-            // logPO.setLoginTime(message.getLoginTime());
-            // logPO.setClientType(message.getClientType());
-            // logPO.setDeviceId(message.getDeviceId());
-            // userLoginLogMapper.insert(logPO);
+    @PostConstruct
+    public void init() throws Exception {
+        consumer = new DefaultMQPushConsumer();
+        consumer.setVipChannelEnabled(false);
+        consumer.setNamesrvAddr(nameServer);
+        consumer.setConsumerGroup("user-login-log-group");
+        consumer.setConsumeMessageBatchMaxSize(10);
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_LAST_OFFSET);
 
-            // 示例：风控检测
-            if (isAbnormalLogin(message)) {
-                logger.warn("⚠️ 检测到异常登录！userId={}, ip={}",
-                    message.getUserId(), message.getLoginIp());
-                // TODO: 发送安全警告邮件/短信
+        // 订阅主题
+        consumer.subscribe("UserLogin", "*");
+
+        // 设置消息监听器
+        consumer.setMessageListener(new MessageListenerConcurrently() {
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(
+                    List<MessageExt> msgs,
+                    ConsumeConcurrentlyContext context) {
+
+                for (MessageExt msg : msgs) {
+                    try {
+                        String msgBody = new String(msg.getBody());
+                        UserLoginMsg message = JSON.parseObject(msgBody, UserLoginMsg.class);
+
+                        logger.info("╔════════════════════════════════════════╗");
+                        logger.info("║   收到用户登录消息                         ║");
+                        logger.info("╚════════════════════════════════════════╝");
+                        logger.info("用户ID: {}", message.getUserId());
+                        logger.info("用户名: {}", message.getUsername());
+                        logger.info("用户类型: {}", message.getUserType());
+                        logger.info("登录时间: {}", message.getLoginTime());
+                        logger.info("登录IP: {}", message.getLoginIp());
+                        logger.info("客户端类型: {}", message.getClientType());
+                        logger.info("设备ID: {}", message.getDeviceId());
+                        logger.info("是否首次登录: {}", message.getIsFirstLogin());
+                        logger.info("登录方式: {}", message.getLoginType());
+
+                        // TODO: 实际业务处理
+                        // 1. 记录登录日志到数据库（user_login_logs 表）
+                        // 2. 风控检测（检查异常登录、异地登录等）
+                        // 3. 更新推荐算法（根据登录行为调整推荐）
+
+                        // 示例：风控检测
+                        if (isAbnormalLogin(message)) {
+                            logger.warn("⚠ 检测到异常登录！userId={}, ip={}",
+                                message.getUserId(), message.getLoginIp());
+                            // TODO: 发送安全警告邮件/短信
+                        }
+
+                        logger.info("✓ 用户登录消息处理成功！userId={}", message.getUserId());
+
+                    } catch (Exception e) {
+                        logger.error("✗ 处理用户登录消息失败", e);
+                        return ConsumeConcurrentlyStatus.RECONSUME_LATER;
+                    }
+                }
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
             }
+        });
 
-            logger.info("✅ 用户登录消息处理成功！userId={}", message.getUserId());
+        // 启动消费者
+        consumer.start();
+        System.out.println();
+        System.out.println("╔════════════════════════════════════════╗");
+        System.out.println("║   UserLoginListener 启动成功              ║");
+        System.out.println("║   Topic: UserLogin                       ║");
+        System.out.println("║   Group: user-login-log-group            ║");
+        System.out.println("╚════════════════════════════════════════╝");
+        System.out.println();
+    }
 
-        } catch (Exception e) {
-            logger.error("❌ 处理用户登录消息失败！userId={}, error={}",
-                message.getUserId(), e.getMessage(), e);
-            // 注意：这里抛出异常会让 MQ 重试
-            throw new RuntimeException("处理登录消息失败", e);
+    @PreDestroy
+    public void destroy() {
+        if (consumer != null) {
+            consumer.shutdown();
+            logger.info("✓ UserLoginListener 已关闭");
         }
     }
 

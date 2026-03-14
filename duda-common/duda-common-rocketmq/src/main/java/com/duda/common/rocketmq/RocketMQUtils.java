@@ -1,16 +1,17 @@
 package com.duda.common.rocketmq;
 
-import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import com.alibaba.fastjson2.JSON;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.common.message.Message;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
 /**
  * RocketMQ 工具类
- * 封装常用的 MQ 操作
+ * 封装常用的 MQ 操作（直接使用 DefaultMQProducer）
  *
  * 使用方法：
  * <pre>
@@ -22,9 +23,6 @@ import java.util.UUID;
  *
  * // 带Key的同步发送（推荐，便于追踪）
  * rocketMQUtils.syncSendWithKey(MqTopicConstants.USER_REGISTER, userDTO, "user-register-" + userId);
- *
- * // 延时消息（30分钟后）
- * rocketMQUtils.syncSendDelay(MqTopicConstants.ORDER_TIMEOUT, orderId, 16);
  * </pre>
  *
  * @author DudaNexus
@@ -34,7 +32,7 @@ import java.util.UUID;
 public class RocketMQUtils {
 
     @Autowired
-    private RocketMQTemplate rocketMQTemplate;
+    private DefaultMQProducer producer;
 
     /**
      * 同步发送消息（不带Key）
@@ -43,7 +41,13 @@ public class RocketMQUtils {
      * @param message 消息内容
      */
     public <T> void syncSend(String topic, T message) {
-        rocketMQTemplate.syncSend(topic, message);
+        try {
+            String messageBody = JSON.toJSONString(message);
+            Message msg = new Message(topic, messageBody.getBytes());
+            producer.send(msg);
+        } catch (Exception e) {
+            throw new RuntimeException("发送MQ消息失败，topic: " + topic, e);
+        }
     }
 
     /**
@@ -57,11 +61,10 @@ public class RocketMQUtils {
      */
     public <T> void syncSendWithKey(String topic, T message, String messageKey) {
         try {
-            // 构建消息，设置Key
-            Message<T> msg = MessageBuilder.withPayload(message)
-                    .setHeader("keys", messageKey)
-                    .build();
-            rocketMQTemplate.syncSend(topic, msg);
+            String messageBody = JSON.toJSONString(message);
+            Message msg = new Message(topic, messageBody.getBytes());
+            msg.setKeys(messageKey);
+            producer.send(msg);
         } catch (Exception e) {
             throw new RuntimeException("发送MQ消息失败，topic: " + topic + ", messageKey: " + messageKey, e);
         }
@@ -75,61 +78,13 @@ public class RocketMQUtils {
      * @param timeout 超时时间（毫秒）
      */
     public <T> void syncSend(String topic, T message, long timeout) {
-        rocketMQTemplate.syncSend(topic, message, timeout);
-    }
-
-    /**
-     * 同步发送消息（带延时）
-     *
-     * @param topic Topic
-     * @param message 消息内容
-     * @param timeout 超时时间（毫秒）
-     * @param delayLevel 延时等级（1-18，对应 1s-2h）
-     */
-    public <T> void syncSend(String topic, T message, long timeout, int delayLevel) {
-        Message<T> msg = MessageBuilder.withPayload(message).build();
-        rocketMQTemplate.syncSend(topic, msg, timeout, delayLevel);
-    }
-
-    /**
-     * 同步发送延时消息（默认超时3000ms，带Key）
-     *
-     * @param topic Topic
-     * @param message 消息内容
-     * @param delayLevel 延时等级（1-18，对应 1s-2h）
-     * @param messageKey 消息唯一标识
-     */
-    public <T> void syncSendDelayWithKey(String topic, T message, int delayLevel, String messageKey) {
         try {
-            Message<T> msg = MessageBuilder.withPayload(message)
-                    .setHeader("keys", messageKey)
-                    .build();
-            rocketMQTemplate.syncSend(topic, msg, 3000, delayLevel);
+            String messageBody = JSON.toJSONString(message);
+            Message msg = new Message(topic, messageBody.getBytes());
+            producer.send(msg, timeout);
         } catch (Exception e) {
-            throw new RuntimeException("发送延时MQ消息失败，topic: " + topic + ", messageKey: " + messageKey, e);
+            throw new RuntimeException("发送MQ消息失败，topic: " + topic, e);
         }
-    }
-
-    /**
-     * 同步发送延时消息（默认超时3000ms）
-     *
-     * @param topic Topic
-     * @param message 消息内容
-     * @param delayLevel 延时等级（1-18，对应 1s-2h）
-     */
-    public <T> void syncSendDelay(String topic, T message, int delayLevel) {
-        Message<T> msg = MessageBuilder.withPayload(message).build();
-        rocketMQTemplate.syncSend(topic, msg, 3000, delayLevel);
-    }
-
-    /**
-     * 异步发送消息
-     *
-     * @param topic Topic
-     * @param message 消息内容
-     */
-    public <T> void asyncSend(String topic, T message) {
-        rocketMQTemplate.asyncSend(topic, message, null);
     }
 
     /**
@@ -140,31 +95,26 @@ public class RocketMQUtils {
      * @param messageKey 消息唯一标识
      */
     public <T> void asyncSendWithKey(String topic, T message, String messageKey) {
-        Message<T> msg = MessageBuilder.withPayload(message)
-                .setHeader("keys", messageKey)
-                .build();
-        rocketMQTemplate.asyncSend(topic, msg, null);
-    }
-
-    /**
-     * 异步发送消息（带超时）
-     *
-     * @param topic Topic
-     * @param message 消息内容
-     * @param timeout 超时时间（毫秒）
-     */
-    public <T> void asyncSend(String topic, T message, long timeout) {
-        rocketMQTemplate.asyncSend(topic, message, null, timeout);
-    }
-
-    /**
-     * 同步发送消息（OneWay，不关心发送结果）
-     *
-     * @param topic Topic
-     * @param message 消息内容
-     */
-    public <T> void sendOneWay(String topic, T message) {
-        rocketMQTemplate.sendOneWay(topic, message);
+        try {
+            String messageBody = JSON.toJSONString(message);
+            Message msg = new Message(topic, messageBody.getBytes());
+            msg.setKeys(messageKey);
+            // 异步发送，不关心结果
+            producer.send(msg, new org.apache.rocketmq.client.producer.SendCallback() {
+                @Override
+                public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                    // 发送成功，忽略
+                }
+                @Override
+                public void onException(Throwable e) {
+                    // 发送失败，记录日志
+                    System.err.println("异步发送MQ消息失败，topic: " + topic + ", messageKey: " + messageKey);
+                    e.printStackTrace();
+                }
+            });
+        } catch (Exception e) {
+            throw new RuntimeException("异步发送MQ消息失败，topic: " + topic + ", messageKey: " + messageKey, e);
+        }
     }
 
     /**

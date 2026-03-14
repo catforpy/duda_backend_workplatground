@@ -32,13 +32,17 @@ services:
 
   # 消息服务 (MSG_GROUP)
   duda-msg-provider:
+    build:
+      context: ./duda-msg/duda-msg-provider
+      dockerfile: Dockerfile
     image: duda/msg-provider:1.0.0
     container_name: duda-msg-provider
     ports:
       - "9091:9091"
+      - "20881:20880"
     environment:
       - SPRING_PROFILES_ACTIVE=dev
-      - JAVA_OPTS=-Xms256m -Xmx256m
+      - JAVA_OPTS=-Xms256m -Xmx512m
       - SPRING_CLOUD_NACOS_CONFIG_IMPORT_CHECK_ENABLED=false
     networks:
       - duda-network
@@ -59,7 +63,7 @@ services:
     container_name: duda-user-provider
     ports:
       - "8082:8082"
-      - "20880:20880"
+      - "20882:20880"
     environment:
       - SPRING_PROFILES_ACTIVE=dev
       - JAVA_OPTS=-Xms512m -Xmx512m
@@ -78,30 +82,64 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # 用户API服务
-  duda-user-api:
-    image: duda/user-api:1.0.0
+  # 文件Provider服务 (FILE_GROUP)
+  duda-file-provider:
     build:
-      context: ./duda-usercenter/duda-user-api
+      context: ./duda-file/duda-file-provider
       dockerfile: Dockerfile
-    container_name: duda-user-api
+    image: duda/file-provider:1.0.0
+    container_name: duda-file-provider
     ports:
-      - "8083:8083"
+      - "8084:8080"
+      - "20883:20880"
     environment:
       - SPRING_PROFILES_ACTIVE=dev
       - JAVA_OPTS=-Xms512m -Xmx512m
     volumes:
-      - /var/log/duda/user-api:/var/log/duda
+      - /var/log/duda/file:/var/log/duda
     networks:
       - duda-network
     depends_on:
-      - duda-user-provider
+      duda-id-generator:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8084/actuator/health"]
       interval: 30s
       timeout: 3s
       retries: 3
       start_period: 60s
+    restart: unless-stopped
+
+  # ==========================
+  # 网关服务 (GATEWAY_GROUP)
+  # ==========================
+
+  # 网关服务 - 统一入口 + Swagger文档
+  duda-gateway:
+    build:
+      context: ./duda-gateway
+      dockerfile: Dockerfile
+    image: duda/gateway:1.0.0
+    container_name: duda-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms512m -Xmx1024m
+    volumes:
+      - /var/log/duda/gateway:/var/log/duda
+    networks:
+      - duda-network
+    depends_on:
+      - duda-user-provider
+      - duda-msg-provider
+      - duda-file-provider
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
 
 # 网络配置
