@@ -47,6 +47,9 @@ public class UploadServiceImpl implements UploadService {
     private BucketConfigMapper bucketConfigMapper;
 
     @Autowired
+    private com.duda.file.provider.service.OssPostSignatureService ossPostSignatureService;
+
+    @Autowired
     private ObjectMetadataMapper objectMetadataMapper;
 
     @Autowired
@@ -809,5 +812,18 @@ public class UploadServiceImpl implements UploadService {
         } catch (Exception e) {
             log.error("Failed to save access log", e);
         }
+    }
+
+    /**
+     * 获取OSS POST签名
+     * <p>实现阿里云官方文档的POST签名方案</p>
+     *
+     * @param bucketName Bucket名称
+     * @return POST签名响应
+     */
+    @Override
+    public OssPostSignatureDTO getOssPostSignature(String bucketName) {
+        log.info("获取OSS POST签名，bucket: {}", bucketName);
+        return ossPostSignatureService.getOssPostSignature(bucketName);
     }
 }

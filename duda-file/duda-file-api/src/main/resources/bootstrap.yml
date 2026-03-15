@@ -86,3 +86,20 @@ springdoc:
   show-actuator: false
   default-consumes-media-type: application/json
   default-produces-media-type: application/json
+
+# OSS配置
+oss:
+  # Bucket名称
+  bucket: ${OSS_BUCKET:duda-java-backend-test}
+  # 区域（如：cn-hangzhou, cn-beijing）
+  region: ${OSS_REGION:cn-hangzhou}
+  # 访问密钥ID（生产环境建议使用STS）
+  access-key-id: ${OSS_ACCESS_KEY_ID:}
+  # 访问密钥Secret
+  access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+  # STS Role ARN（如果使用STS临时凭证）
+  sts-role-arn: ${OSS_STS_ROLE_ARN:}
+  # 上传目录前缀
+  upload-dir: ${OSS_UPLOAD_DIR:uploads/}
+  # 签名过期时间（秒），默认3600秒（1小时）
+  expire-time: ${OSS_EXPIRE_TIME:3600}

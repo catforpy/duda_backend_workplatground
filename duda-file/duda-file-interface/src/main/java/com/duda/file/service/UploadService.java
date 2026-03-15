@@ -118,6 +118,15 @@ public interface UploadService {
     Map<String, String> generatePostObjectForm(PostObjectFormReqDTO request);
 
     /**
+     * 获取OSS POST签名（用于表单直传）
+     * <p>完全遵循阿里云官方文档的POST签名方案</p>
+     *
+     * @param bucketName Bucket名称
+     * @return POST签名响应
+     */
+    OssPostSignatureDTO getOssPostSignature(String bucketName);
+
+    /**
      * 生成预签名URL(用于客户端上传/下载)
      *
      * @param request 预签名请求
