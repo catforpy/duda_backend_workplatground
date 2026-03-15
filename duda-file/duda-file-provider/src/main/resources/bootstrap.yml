@@ -30,6 +30,10 @@ spring:
           - data-id: common-${spring.profiles.active:dev}.yml
             group: COMMON_GROUP
             refresh: true
+          # 服务专属配置（OSS、STS等敏感信息）
+          - data-id: duda-file-provider-${spring.profiles.active:dev}.yml
+            group: DUDA_FILE_GROUP
+            refresh: true
 
 # Dubbo 最小配置（只保留启动必需的）
 dubbo:

@@ -27,10 +27,15 @@ spring:
         namespace: ${NACOS_NAMESPACE:duda-dev}
         group: DUDA_FILE_GROUP
         file-extension: yml
+        refresh-enabled: true
         shared-configs:
           # 公共配置
           - data-id: common-${spring.profiles.active:dev}.yml
             group: COMMON_GROUP
+            refresh: true
+          # 服务专属配置（OSS等）
+          - data-id: duda-file-api-${spring.profiles.active:dev}.yml
+            group: DUDA_FILE_GROUP
             refresh: true
 
 # Dubbo配置
