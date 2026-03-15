@@ -1,7 +1,7 @@
 # Bootstrap 配置 - 文件API服务
 
 server:
-  port: 8084
+  port: 8085
 
 spring:
   application:
@@ -18,14 +18,14 @@ spring:
       # 服务发现配置
       discovery:
         namespace: ${NACOS_NAMESPACE:duda-dev}
-        group: FILE_GROUP
+        group: DUDA_FILE_GROUP
         enabled: true
         register-enabled: true
 
       # 配置中心配置
       config:
         namespace: ${NACOS_NAMESPACE:duda-dev}
-        group: FILE_GROUP
+        group: DUDA_FILE_GROUP
         file-extension: yml
         shared-configs:
           # 公共配置
@@ -37,6 +37,13 @@ spring:
 dubbo:
   application:
     name: ${spring.application.name}
+    # 禁用应用级服务发现
+    qos-enable: false
+    qos-accept-foreign-ip: false
+    # 序列化配置
+    serialize-check-status: WARN
+    # 禁用严格的序列化检查
+    checkSerializable: false
   protocol:
     name: dubbo
     port: -1
@@ -44,10 +51,38 @@ dubbo:
     address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
     parameters:
       namespace: ${NACOS_NAMESPACE:duda-dev}
-      group: FILE_GROUP
+      group: DUDA_FILE_GROUP
       use-as-config-center: false
       use-as-metadata-center: false
   consumer:
     check: false
     timeout: 10000
     retries: 2
+
+# 健康检查配置（Actuator）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: always
+  health:
+    defaults:
+      enabled: true
+
+# Swagger 配置（SpringDoc OpenAPI）
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  show-actuator: false
+  default-consumes-media-type: application/json
+  default-produces-media-type: application/json

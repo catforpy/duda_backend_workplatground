@@ -11,10 +11,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # 添加应用JAR
-ADD target/duda-file-api-1.0.0-SNAPSHOT.jar app.jar
+ADD duda-file-api-1.0.0-SNAPSHOT.jar app.jar
 
 # 暴露端口
-EXPOSE 8084
+EXPOSE 8085
 
 # 设置JVM参数
 ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"

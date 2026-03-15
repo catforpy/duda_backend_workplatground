@@ -37,7 +37,7 @@ import java.util.Map;
  * @date 2025-03-13
  */
 @Slf4j
-@DubboService(version = "1.0.0", timeout = 60000)
+@DubboService(version = "1.0.0", group = "DUDA_FILE_GROUP", timeout = 60000)
 public class UploadServiceImpl implements UploadService {
 
     @Autowired

@@ -25,6 +25,13 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- File Common -->
+        <dependency>
+            <groupId>com.duda</groupId>
+            <artifactId>duda-file-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Dubbo -->
         <dependency>
             <groupId>org.apache.dubbo</groupId>
@@ -94,6 +101,19 @@
             <groupId>com.aliyun.oss</groupId>
             <artifactId>aliyun-sdk-oss</artifactId>
         </dependency>
+
+        <!-- 阿里云STS SDK -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>aliyun-java-sdk-sts</artifactId>
+            <version>3.1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>aliyun-java-sdk-core</artifactId>
+            <version>4.6.4</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -101,6 +121,17 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>3.2.0</version>
+                <configuration>
+                    <classifier>exec</classifier>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- 复制JAR到项目根目录（便于Docker构建） -->
