@@ -82,6 +82,31 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  # 用户API服务 (USER_GROUP)
+  duda-user-api:
+    image: user-api:latest
+    build:
+      context: ./duda-usercenter/duda-user-api
+      dockerfile: Dockerfile
+    container_name: duda-user-api
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms512m -Xmx512m
+    networks:
+      - duda-network
+    depends_on:
+      - duda-user-provider
+      - duda-msg-provider
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
   # 文件Provider服务 (FILE_GROUP)
   duda-file-provider:
     build:
@@ -110,6 +135,31 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  # 文件API服务 (FILE_GROUP)
+  duda-file-api:
+    build:
+      context: ./duda-file/duda-file-api
+      dockerfile: Dockerfile
+    image: duda/file-api:1.0.0
+    container_name: duda-file-api
+    ports:
+      - "8085:8085"
+      - "20885:20885"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms512m -Xmx512m
+    networks:
+      - duda-network
+    depends_on:
+      - duda-file-provider
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8085/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
   # ==========================
   # 网关服务 (GATEWAY_GROUP)
   # ==========================
@@ -132,8 +182,10 @@ services:
       - duda-network
     depends_on:
       - duda-user-provider
+      - duda-user-api
       - duda-msg-provider
       - duda-file-provider
+      - duda-file-api
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
       interval: 30s

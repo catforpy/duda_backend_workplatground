@@ -21,13 +21,14 @@ services:
 
   # 用户API服务
   duda-user-api:
-    image: duda/user-api:1.0.0
+    image: user-api:latest
     build:
       context: ./duda-usercenter/duda-user-api
       dockerfile: Dockerfile
     container_name: duda-user-api
     ports:
       - "8083:8083"
+      - "20883:20883"
     environment:
       - SPRING_PROFILES_ACTIVE=dev
       - JAVA_OPTS=-Xms512m -Xmx512m

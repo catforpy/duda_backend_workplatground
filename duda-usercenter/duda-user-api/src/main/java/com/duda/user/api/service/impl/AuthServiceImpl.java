@@ -63,14 +63,7 @@ public class AuthServiceImpl implements IAuthService {
         // 3. 查询用户信息
         UserDTO userDTO = userRpc.getUserById(userId);
 
-        // 4. 生成Token
-        TokenDTO tokenDTO = tokenService.generateTokens(
-                userDTO.getId(),
-                userDTO.getUsername(),
-                userDTO.getUserType()
-        );
-
-        // 5. 组装响应
+        // 4. 组装响应（不自动生成Token，需要用户重新登录）
         RegisterResponseDTO response = RegisterResponseDTO.builder()
                 .userId(userDTO.getId())
                 .username(userDTO.getUsername())
@@ -81,13 +74,9 @@ public class AuthServiceImpl implements IAuthService {
                 .email(maskEmail(userDTO.getEmail()))
                 .avatar(userDTO.getAvatar())
                 .status(userDTO.getStatus())
-                .statusDesc("激活成功")
+                .statusDesc("注册成功，请登录")
                 .needLogin(true)
-                .accessToken(tokenDTO.getAccessToken())
-                .refreshToken(tokenDTO.getRefreshToken())
-                .tokenType("Bearer")
-                .expiresIn(tokenDTO.getExpiresIn() != null ? tokenDTO.getExpiresIn().longValue() : null)
-                .welcomeMessage("欢迎加入都达云台！")
+                .welcomeMessage("注册成功！请使用您的账号和密码登录。")
                 .build();
 
         // 6. 发送注册 MQ 消息（异步处理：欢迎邮件、初始化数据等）

@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
 
 /**
  * 认证控制器 V2 - 明确区分不同身份和登录方式
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 @Tag(name = "用户认证V2", description = "区分身份和登录方式的认证接口")
 @RestController
 @RequestMapping("/api/auth/v2")
+@CrossOrigin(originPatterns = "*", maxAge = 3600)  // 允许所有来源的跨域请求
 public class AuthV2Controller {
 
     @Resource
