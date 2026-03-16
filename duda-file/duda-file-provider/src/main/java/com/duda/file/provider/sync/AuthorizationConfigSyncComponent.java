@@ -159,13 +159,18 @@ public class AuthorizationConfigSyncComponent implements CommandLineRunner {
         }
 
         // 更新Bucket Policy
-        String bucketPolicy = (String) config.get("bucketPolicy");
-        if (bucketPolicy != null) {
-            jdbcTemplate.update(
-                "UPDATE bucket_statistics SET bucket_policy = ?, updated_time = NOW() WHERE bucket_name = ?",
-                bucketPolicy, bucketName
-            );
-            log.info("  ✓ Bucket Policy: 已设置");
+        Boolean bucketPolicyEnabled = (Boolean) config.get("bucketPolicyEnabled");
+        if (bucketPolicyEnabled != null && bucketPolicyEnabled) {
+            String bucketPolicy = (String) config.get("bucketPolicy");
+            if (bucketPolicy != null) {
+                jdbcTemplate.update(
+                    "UPDATE bucket_statistics SET bucket_policy = ?, updated_time = NOW() WHERE bucket_name = ?",
+                    bucketPolicy, bucketName
+                );
+                log.info("  ✓ Bucket Policy: 已设置");
+            }
+        } else {
+            log.info("  ✓ Bucket Policy: 未启用");
         }
 
         // 更新CORS
