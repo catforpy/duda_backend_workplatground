@@ -1,5 +1,9 @@
 # Bootstrap 配置 - 网关服务
 
+server:
+  port: 8080
+  address: 0.0.0.0  # 绑定到所有网卡，支持局域网访问
+
 spring:
   application:
     name: duda-gateway

@@ -339,7 +339,7 @@ public class UploadServiceImpl implements UploadService {
 
         } catch (Exception e) {
             log.error("Dubbo: Failed to list parts", e);
-            throw new StorageException("LIST_PARTS_FAILED", "Failed to list parts", e);
+            throw new StorageException("LIST_PARTS_FAILED", "Failed to list parts: " + e.getMessage());
         }
     }
 
@@ -407,7 +407,8 @@ public class UploadServiceImpl implements UploadService {
 
         } catch (Exception e) {
             log.error("Dubbo: Failed to get STS credentials for bucket: {}", request.getBucketName(), e);
-            throw new StorageException("STS_FAILED", "Failed to get STS credentials: " + e.getMessage(), e);
+            // 不传递异常对象，避免 Dubbo 序列化问题
+            throw new StorageException("STS_FAILED", "Failed to get STS credentials: " + e.getMessage());
         }
     }
 
@@ -429,7 +430,7 @@ public class UploadServiceImpl implements UploadService {
 
         } catch (Exception e) {
             log.error("Dubbo: Failed to generate presigned URL", e);
-            throw new StorageException("URL_GENERATION_FAILED", "Failed to generate presigned URL", e);
+            throw new StorageException("URL_GENERATION_FAILED", "Failed to generate presigned URL: " + e.getMessage());
         }
     }
 
@@ -450,7 +451,7 @@ public class UploadServiceImpl implements UploadService {
 
         } catch (Exception e) {
             log.error("Dubbo: Failed to generate post object form", e);
-            throw new StorageException("FORM_DATA_GENERATION_FAILED", "Failed to generate post object form", e);
+            throw new StorageException("FORM_DATA_GENERATION_FAILED", "Failed to generate post object form: " + e.getMessage());
         }
     }
 
@@ -474,7 +475,7 @@ public class UploadServiceImpl implements UploadService {
 
         } catch (Exception e) {
             log.error("Dubbo: Failed to generate callback upload", e);
-            throw new StorageException("CALLBACK_FAILED", "Failed to generate callback upload", e);
+            throw new StorageException("CALLBACK_FAILED", "Failed to generate callback upload: " + e.getMessage());
         }
     }
 
@@ -488,7 +489,7 @@ public class UploadServiceImpl implements UploadService {
 
         } catch (Exception e) {
             log.error("Dubbo: Failed to create resume upload record", e);
-            throw new StorageException("CREATE_FAILED", "Failed to create resume record", e);
+            throw new StorageException("CREATE_FAILED", "Failed to create resume record: " + e.getMessage());
         }
     }
 
@@ -504,7 +505,7 @@ public class UploadServiceImpl implements UploadService {
 
         } catch (Exception e) {
             log.error("Dubbo: Failed to get resume upload record", e);
-            throw new StorageException("QUERY_FAILED", "Failed to query resume record", e);
+            throw new StorageException("QUERY_FAILED", "Failed to query resume record: " + e.getMessage());
         }
     }
 
@@ -518,7 +519,7 @@ public class UploadServiceImpl implements UploadService {
 
         } catch (Exception e) {
             log.error("Dubbo: Failed to delete resume upload record", e);
-            throw new StorageException("DELETE_FAILED", "Failed to delete resume record", e);
+            throw new StorageException("DELETE_FAILED", "Failed to delete resume record: " + e.getMessage());
         }
     }
 
@@ -684,7 +685,7 @@ public class UploadServiceImpl implements UploadService {
             return AesUtil.decrypt(encryptedKey, encryptionKey);
         } catch (Exception e) {
             log.error("解密API密钥失败", e);
-            throw new StorageException("DECRYPTION_FAILED", "Failed to decrypt API key: " + e.getMessage());
+            throw new StorageException("DECRYPTION_FAILED", "Failed to decrypt API key");
         }
     }
 

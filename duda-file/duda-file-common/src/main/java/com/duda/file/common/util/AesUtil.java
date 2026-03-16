@@ -70,7 +70,7 @@ public class AesUtil {
 
         } catch (Exception e) {
             log.error("AES加密失败", e);
-            throw new RuntimeException("AES加密失败: " + e.getMessage(), e);
+            throw new RuntimeException("AES加密失败: " + e.getMessage());
         }
     }
 
@@ -110,7 +110,7 @@ public class AesUtil {
 
         } catch (Exception e) {
             log.error("AES解密失败", e);
-            throw new RuntimeException("AES解密失败: " + e.getMessage(), e);
+            throw new RuntimeException("AES解密失败: " + e.getMessage());
         }
     }
 
@@ -149,7 +149,7 @@ public class AesUtil {
             return Base64.getEncoder().encodeToString(key);
         } catch (Exception e) {
             log.error("生成AES密钥失败", e);
-            throw new RuntimeException("生成AES密钥失败: " + e.getMessage(), e);
+            throw new RuntimeException("生成AES密钥失败: " + e.getMessage());
         }
     }
 }

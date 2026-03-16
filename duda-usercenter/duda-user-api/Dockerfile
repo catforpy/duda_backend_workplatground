@@ -31,7 +31,7 @@ ENV JAVA_OPTS="\
 -Duser.timezone=Asia/Shanghai"
 
 # 暴露端口
-EXPOSE 8081
+EXPOSE 8083
 
 # 启动应用
 ENTRYPOINT java ${JAVA_OPTS} \

@@ -107,6 +107,11 @@
 #  health:
 #    defaults:
 #      enabled: true
+
+server:
+  port: 8082
+  address: 0.0.0.0  # 绑定到所有网卡，支持局域网访问
+
 # Bootstrap 配置 - 用户服务
 
 spring:

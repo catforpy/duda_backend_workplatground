@@ -28,16 +28,6 @@
         <result column="watermark_enabled" property="watermarkEnabled" jdbcType="TINYINT"/>
         <result column="encryption_enabled" property="encryptionEnabled" jdbcType="TINYINT"/>
         <result column="lifecycle_enabled" property="lifecycleEnabled" jdbcType="TINYINT"/>
-        <result column="lifecycle_config" property="lifecycleConfig" jdbcType="VARCHAR"/>
-        <result column="cors_config" property="corsConfig" jdbcType="VARCHAR"/>
-        <result column="referer_config" property="refererConfig" jdbcType="VARCHAR"/>
-        <result column="bucket_policy" property="bucketPolicy" jdbcType="VARCHAR"/>
-        <result column="replication_config" property="replicationConfig" jdbcType="VARCHAR"/>
-        <result column="access_monitor_config" property="accessMonitorConfig" jdbcType="VARCHAR"/>
-        <result column="inventory_config" property="inventoryConfig" jdbcType="VARCHAR"/>
-        <result column="website_config" property="websiteConfig" jdbcType="VARCHAR"/>
-        <result column="logging_config" property="loggingConfig" jdbcType="VARCHAR"/>
-        <result column="worm_config" property="wormConfig" jdbcType="VARCHAR"/>
         <result column="transfer_acceleration_enabled" property="transferAccelerationEnabled" jdbcType="TINYINT"/>
         <result column="current_file_count" property="currentFileCount" jdbcType="INTEGER"/>
         <result column="current_storage_size" property="currentStorageSize" jdbcType="BIGINT"/>
@@ -67,8 +57,6 @@
         storage_class, data_redundancy_type, acl_type, max_file_size, max_file_count, max_storage_size,
         allowed_file_types, blocked_file_types, domain_name, cdn_enabled, cdn_domain,
         versioning_enabled, cors_enabled, watermark_enabled, encryption_enabled, lifecycle_enabled,
-        lifecycle_config, cors_config, referer_config, bucket_policy, replication_config,
-        access_monitor_config, inventory_config, website_config, logging_config, worm_config,
         transfer_acceleration_enabled,
         current_file_count, current_storage_size, storage_used_quota, access_key_id, access_key_secret,
         secret_key, endpoint, sts_role_arn, sts_external_id, status, auto_renew_enabled, tags,
