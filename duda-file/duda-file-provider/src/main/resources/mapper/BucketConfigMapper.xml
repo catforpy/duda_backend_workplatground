@@ -49,6 +49,16 @@
         <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
         <result column="deleted_time" property="deletedTime" jdbcType="TIMESTAMP"/>
         <result column="is_deleted" property="isDeleted" jdbcType="TINYINT"/>
+        <result column="lifecycle_config" property="lifecycleConfig" jdbcType="VARCHAR"/>
+        <result column="cors_config" property="corsConfig" jdbcType="VARCHAR"/>
+        <result column="referer_config" property="refererConfig" jdbcType="VARCHAR"/>
+        <result column="bucket_policy" property="bucketPolicy" jdbcType="VARCHAR"/>
+        <result column="replication_config" property="replicationConfig" jdbcType="VARCHAR"/>
+        <result column="access_monitor_config" property="accessMonitorConfig" jdbcType="VARCHAR"/>
+        <result column="inventory_config" property="inventoryConfig" jdbcType="VARCHAR"/>
+        <result column="website_config" property="websiteConfig" jdbcType="VARCHAR"/>
+        <result column="logging_config" property="loggingConfig" jdbcType="VARCHAR"/>
+        <result column="worm_config" property="wormConfig" jdbcType="VARCHAR"/>
     </resultMap>
 
     <!-- 基础列 -->
@@ -60,7 +70,9 @@
         transfer_acceleration_enabled,
         current_file_count, current_storage_size, storage_used_quota, access_key_id, access_key_secret,
         secret_key, endpoint, sts_role_arn, sts_external_id, status, auto_renew_enabled, tags,
-        category, description, created_by, created_time, updated_by, updated_time, deleted_time, is_deleted
+        category, description, created_by, created_time, updated_by, updated_time, deleted_time, is_deleted,
+        lifecycle_config, cors_config, referer_config, bucket_policy, replication_config,
+        access_monitor_config, inventory_config, website_config, logging_config, worm_config
     </sql>
 
     <!-- 根据ID查询 -->
@@ -122,7 +134,9 @@
             versioning_enabled, cors_enabled, watermark_enabled, encryption_enabled, lifecycle_enabled,
             current_file_count, current_storage_size, storage_used_quota, access_key_id, access_key_secret,
             secret_key, endpoint, sts_role_arn, sts_external_id, status, auto_renew_enabled, tags,
-            category, description, created_by
+            category, description, created_by, lifecycle_config, cors_config, referer_config,
+            bucket_policy, replication_config, access_monitor_config, inventory_config,
+            website_config, logging_config, worm_config
         ) VALUES (
             #{bucketName}, #{bucketDisplayName}, #{storageType}, #{region}, #{userId}, #{userType}, #{tenantId},
             #{storageClass}, #{dataRedundancyType}, #{aclType}, #{maxFileSize}, #{maxFileCount}, #{maxStorageSize},
@@ -130,7 +144,9 @@
             #{versioningEnabled}, #{corsEnabled}, #{watermarkEnabled}, #{encryptionEnabled}, #{lifecycleEnabled},
             #{currentFileCount}, #{currentStorageSize}, #{storageUsedQuota}, #{accessKeyId}, #{accessKeySecret},
             #{secretKey}, #{endpoint}, #{stsRoleArn}, #{stsExternalId}, #{status}, #{autoRenewEnabled}, #{tags},
-            #{category}, #{description}, #{createdBy}
+            #{category}, #{description}, #{createdBy}, #{lifecycleConfig}, #{corsConfig}, #{refererConfig},
+            #{bucketPolicy}, #{replicationConfig}, #{accessMonitorConfig}, #{inventoryConfig},
+            #{websiteConfig}, #{loggingConfig}, #{wormConfig}
         )
     </insert>
 
@@ -148,6 +164,10 @@
             <if test="maxFileCount != null">max_file_count = #{maxFileCount},</if>
             <if test="maxStorageSize != null">max_storage_size = #{maxStorageSize},</if>
             <if test="updatedBy != null">updated_by = #{updatedBy},</if>
+            <if test="stsRoleArn != null">sts_role_arn = #{stsRoleArn},</if>
+            <if test="accessKeyId != null">access_key_id = #{accessKeyId},</if>
+            <if test="accessKeySecret != null">access_key_secret = #{accessKeySecret},</if>
+            updated_time = NOW()
         </set>
         WHERE bucket_name = #{bucketName}
     </update>

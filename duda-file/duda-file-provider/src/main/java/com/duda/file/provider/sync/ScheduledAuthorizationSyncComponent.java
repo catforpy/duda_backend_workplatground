@@ -2,6 +2,9 @@ package com.duda.file.provider.sync;
 
 import com.duda.file.adapter.AliyunOSSAdapter;
 import com.duda.file.dto.bucket.ApiKeyConfigDTO;
+import com.duda.file.provider.entity.BucketConfig;
+import com.duda.file.provider.mapper.BucketConfigMapper;
+import com.duda.file.provider.util.AesEncryptUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,17 +33,17 @@ import java.util.List;
 @EnableScheduling
 public class ScheduledAuthorizationSyncComponent {
 
-    @Value("${aliyun.sts.access-key-id}")
-    private String accessKeyId;
-
-    @Value("${aliyun.sts.access-key-secret}")
-    private String accessKeySecret;
-
     @Value("${duda.file.storage.default-region:cn-hangzhou}")
-    private String region;
+    private String defaultRegion;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private BucketConfigMapper bucketConfigMapper;
+
+    @Autowired
+    private AesEncryptUtil aesEncryptUtil;
 
     /**
      * 定时同步授权配置
@@ -71,23 +74,9 @@ public class ScheduledAuthorizationSyncComponent {
                 return;
             }
 
-            // 2. 初始化OSS适配器
+            // 2. 同步每个Bucket的授权配置
             log.info("\n========================================");
-            log.info("步骤2: 初始化OSS适配器");
-            log.info("========================================");
-
-            ApiKeyConfigDTO config = ApiKeyConfigDTO.builder()
-                .accessKeyId(accessKeyId)
-                .accessKeySecret(accessKeySecret)
-                .region(region)
-                .build();
-
-            AliyunOSSAdapter ossAdapter = new AliyunOSSAdapter(config);
-            log.info("✓ OSS适配器初始化成功");
-
-            // 3. 同步每个Bucket的授权配置
-            log.info("\n========================================");
-            log.info("步骤3: 同步授权配置");
+            log.info("步骤2: 同步授权配置");
             log.info("========================================");
 
             int successCount = 0;
@@ -96,6 +85,9 @@ public class ScheduledAuthorizationSyncComponent {
             for (String bucketName : buckets) {
                 try {
                     log.info("\n→ 处理Bucket: {}", bucketName);
+
+                    // 为每个bucket创建对应的OSS适配器
+                    AliyunOSSAdapter ossAdapter = getOSSAdapter(bucketName);
 
                     // 从OSS获取授权配置
                     var ossConfig = ossAdapter.getBucketAuthorizationConfig(bucketName);
@@ -141,6 +133,32 @@ public class ScheduledAuthorizationSyncComponent {
     }
 
     /**
+     * 获取OSS适配器（从数据库读取密钥）
+     */
+    private AliyunOSSAdapter getOSSAdapter(String bucketName) {
+        // 1. 从数据库查询bucket配置
+        BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
+        if (bucketConfig == null) {
+            throw new RuntimeException("Bucket配置不存在: " + bucketName);
+        }
+
+        // 2. 解密密钥
+        String accessKeyId = aesEncryptUtil.decrypt(bucketConfig.getAccessKeyId());
+        String accessKeySecret = aesEncryptUtil.decrypt(bucketConfig.getAccessKeySecret());
+
+        // 3. 创建OSS适配器配置
+        ApiKeyConfigDTO config = ApiKeyConfigDTO.builder()
+            .accessKeyId(accessKeyId)
+            .accessKeySecret(accessKeySecret)
+            .region(bucketConfig.getRegion())
+            .endpoint(bucketConfig.getEndpoint())
+            .build();
+
+        // 4. 创建并返回OSS适配器实例
+        return new AliyunOSSAdapter(config);
+    }
+
+    /**
      * 同步配置到数据库
      */
     private void syncConfigToDatabase(String bucketName, java.util.Map<String, Object> config) {
@@ -163,6 +181,11 @@ public class ScheduledAuthorizationSyncComponent {
 
         if (count == null || count == 0) {
             log.info("  → 记录不存在，创建新记录...");
+
+            // 从bucket_config获取region信息
+            BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
+            String region = (bucketConfig != null) ? bucketConfig.getRegion() : defaultRegion;
+
             jdbcTemplate.update(
                 "INSERT INTO bucket_statistics (" +
                     "bucket_name, region, storage_type, " +

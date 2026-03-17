@@ -6,7 +6,11 @@ import com.aliyuncs.profile.DefaultProfile;
 import com.aliyuncs.sts.model.v20150401.AssumeRoleRequest;
 import com.aliyuncs.sts.model.v20150401.AssumeRoleResponse;
 import com.duda.file.dto.upload.STSCredentialsDTO;
+import com.duda.file.provider.entity.BucketConfig;
+import com.duda.file.provider.mapper.BucketConfigMapper;
+import com.duda.file.provider.util.AesEncryptUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -15,7 +19,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 
 /**
- * 阿里云STS临时凭证服务
+ * 阿里云STS临时凭证服务（从数据库读取密钥）
  *
  * @author duda
  * @date 2025-03-14
@@ -24,26 +28,17 @@ import java.time.ZonedDateTime;
 @Service
 public class STSService {
 
-    @Value("${aliyun.sts.access-key-id}")
-    private String accessKeyId;
+    @Autowired
+    private BucketConfigMapper bucketConfigMapper;
 
-    @Value("${aliyun.sts.access-key-secret}")
-    private String accessKeySecret;
-
-    @Value("${aliyun.sts.role-arn}")
-    private String roleArn;
-
-    @Value("${aliyun.sts.endpoint:sts.cn-hangzhou.aliyuncs.com}")
-    private String endpoint;
-
-    @Value("${aliyun.sts.region:cn-hangzhou}")
-    private String region;
+    @Autowired
+    private AesEncryptUtil aesEncryptUtil;
 
     @Value("${aliyun.sts.default-duration:3600}")
     private Long defaultDuration;
 
     /**
-     * 生成STS临时凭证
+     * 生成STS临时凭证（从数据库读取密钥）
      *
      * @param bucketName 存储空间名称
      * @param objectPrefix 对象前缀（可选，用于限制权限范围）
@@ -53,55 +48,82 @@ public class STSService {
     public STSCredentialsDTO generateSTSCredentials(String bucketName, String objectPrefix, Long durationSeconds) {
         log.info("Generating STS credentials for bucket: {}, prefix: {}", bucketName, objectPrefix);
 
-        DefaultAcsClient client = null;
         try {
-            // 1. 创建STS客户端配置
+            // 1. 从数据库查询Bucket配置
+            BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
+            if (bucketConfig == null) {
+                throw new RuntimeException("Bucket配置不存在: " + bucketName);
+            }
+
+            // 2. 检查Bucket状态
+            if (!"ACTIVE".equalsIgnoreCase(bucketConfig.getStatus())) {
+                throw new RuntimeException("Bucket状态异常: " + bucketConfig.getStatus());
+            }
+
+            // 3. 检查是否有STS Role ARN
+            if (bucketConfig.getStsRoleArn() == null || bucketConfig.getStsRoleArn().isEmpty()) {
+                throw new RuntimeException("Bucket未配置STS Role ARN: " + bucketName);
+            }
+
+            // 4. 从数据库解密密钥
+            String accessKeyId = aesEncryptUtil.decrypt(bucketConfig.getAccessKeyId());
+            String accessKeySecret = aesEncryptUtil.decrypt(bucketConfig.getAccessKeySecret());
+
+            log.debug("Decrypted credentials for bucket: {}, accessKeyId: {}***", bucketName,
+                accessKeyId.substring(0, Math.min(8, accessKeyId.length())));
+
+            // 5. 创建STS客户端配置
             DefaultProfile profile = DefaultProfile.getProfile(
-                region,
+                bucketConfig.getRegion(),
                 accessKeyId,
                 accessKeySecret
             );
 
-            // 2. 创建STS客户端
-            client = new DefaultAcsClient(profile);
+            // 6. 创建STS客户端
+            DefaultAcsClient client = new DefaultAcsClient(profile);
 
-            // 3. 构建权限策略
+            // 7. 构建权限策略
             String policy = buildBucketPolicy(bucketName, objectPrefix);
 
-            // 4. 创建AssumeRole请求
+            // 8. 创建AssumeRole请求
             AssumeRoleRequest request = new AssumeRoleRequest();
-            request.setRoleArn(roleArn);
-            request.setRoleSessionName("duda-file-upload");
+            request.setRoleArn(bucketConfig.getStsRoleArn());
+            request.setRoleSessionName("duda-file-upload-" + bucketName);
             request.setPolicy(policy);
             request.setDurationSeconds(durationSeconds != null ? durationSeconds : defaultDuration);
             request.setMethod(com.aliyuncs.http.MethodType.POST);
 
-            // 5. 调用STS API获取临时凭证
+            // 如果配置了外部ID，添加到请求中
+            if (bucketConfig.getStsExternalId() != null && !bucketConfig.getStsExternalId().isEmpty()) {
+                request.setExternalId(bucketConfig.getStsExternalId());
+            }
+
+            // 9. 调用STS API获取临时凭证
             AssumeRoleResponse response = client.getAcsResponse(request);
 
-            // 6. 提取临时凭证信息
+            // 10. 提取临时凭证信息
             AssumeRoleResponse.Credentials credentials = response.getCredentials();
 
-            // 7. 解析过期时间(阿里云STS返回的格式为: 2025-03-14T12:00:00Z)
+            // 11. 解析过期时间(阿里云STS返回的格式为: 2025-03-14T12:00:00Z)
             String expirationStr = credentials.getExpiration();
             ZonedDateTime zdt = ZonedDateTime.parse(expirationStr);
             LocalDateTime expiration = zdt.withZoneSameInstant(ZoneOffset.systemDefault()).toLocalDateTime();
 
-            // 8. 计算剩余有效时间(秒)
+            // 12. 计算剩余有效时间(秒)
             long remainingSeconds = java.time.Duration.between(
                 LocalDateTime.now(),
                 expiration
             ).getSeconds();
 
-            // 9. 构建返回DTO
+            // 13. 构建返回DTO
             return STSCredentialsDTO.builder()
                 .accessKeyId(credentials.getAccessKeyId())
                 .accessKeySecret(credentials.getAccessKeySecret())
                 .securityToken(credentials.getSecurityToken())
                 .expiration(expiration)
                 .durationSeconds(remainingSeconds)
-                .roleArn(roleArn)
-                .roleSessionName("duda-file-upload")
+                .roleArn(bucketConfig.getStsRoleArn())
+                .roleSessionName("duda-file-upload-" + bucketName)
                 .policy(policy)
                 .build();
 

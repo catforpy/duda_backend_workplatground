@@ -30,6 +30,10 @@ public class OssPostSignatureService {
     @Value("${oss.region:cn-hangzhou}")
     private String region;
 
+    // ⚠️ 已废弃：配置文件密钥已迁移到数据库
+    // TODO: 重构此服务，从数据库读取bucket的密钥
+    // 暂时使用空字符串作为默认值，避免启动失败
+
     @Value("${oss.access-key-id:}")
     private String accessKeyId;
 

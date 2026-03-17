@@ -2,6 +2,9 @@ package com.duda.file.provider.service;
 
 import com.duda.file.adapter.AliyunOSSAdapter;
 import com.duda.file.dto.bucket.*;
+import com.duda.file.provider.entity.BucketConfig;
+import com.duda.file.provider.mapper.BucketConfigMapper;
+import com.duda.file.provider.util.AesEncryptUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,10 +28,39 @@ import java.util.Map;
 public class BucketAuthorizationService {
 
     @Autowired
-    private AliyunOSSAdapter ossAdapter;
+    private BucketConfigMapper bucketConfigMapper;
+
+    @Autowired
+    private AesEncryptUtil aesEncryptUtil;
 
     @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
+
+    /**
+     * 获取OSS适配器（从数据库读取密钥）
+     */
+    private AliyunOSSAdapter getOSSAdapter(String bucketName) {
+        // 1. 从数据库查询bucket配置
+        BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
+        if (bucketConfig == null) {
+            throw new RuntimeException("Bucket配置不存在: " + bucketName);
+        }
+
+        // 2. 解密密钥
+        String accessKeyId = aesEncryptUtil.decrypt(bucketConfig.getAccessKeyId());
+        String accessKeySecret = aesEncryptUtil.decrypt(bucketConfig.getAccessKeySecret());
+
+        // 3. 创建OSS适配器配置
+        ApiKeyConfigDTO config = ApiKeyConfigDTO.builder()
+            .accessKeyId(accessKeyId)
+            .accessKeySecret(accessKeySecret)
+            .region(bucketConfig.getRegion())
+            .endpoint(bucketConfig.getEndpoint())
+            .build();
+
+        // 4. 创建并返回OSS适配器实例
+        return new AliyunOSSAdapter(config);
+    }
 
     /**
      * 设置CORS配置并同步到数据库
@@ -37,6 +69,7 @@ public class BucketAuthorizationService {
         log.info("→ 设置CORS配置并同步: {}", bucketName);
 
         // 1. 设置到OSS
+        AliyunOSSAdapter ossAdapter = getOSSAdapter(bucketName);
         SetBucketCORSResultDTO result = ossAdapter.setBucketCORS(bucketName, config);
 
         // 2. 同步到数据库
@@ -53,6 +86,7 @@ public class BucketAuthorizationService {
         log.info("→ 设置防盗链配置并同步: {}", bucketName);
 
         // 1. 设置到OSS
+        AliyunOSSAdapter ossAdapter = getOSSAdapter(bucketName);
         SetBucketRefererResultDTO result = ossAdapter.setBucketReferer(bucketName, config);
 
         // 2. 同步到数据库
@@ -69,6 +103,7 @@ public class BucketAuthorizationService {
         log.info("→ 设置版本控制配置并同步: {}", bucketName);
 
         // 1. 设置到OSS
+        AliyunOSSAdapter ossAdapter = getOSSAdapter(bucketName);
         SetBucketVersioningResultDTO result = ossAdapter.setBucketVersioning(bucketName, config);
 
         // 2. 同步到数据库
@@ -85,6 +120,7 @@ public class BucketAuthorizationService {
         log.info("→ 设置网站托管配置并同步: {}", bucketName);
 
         // 1. 设置到OSS
+        AliyunOSSAdapter ossAdapter = getOSSAdapter(bucketName);
         SetBucketWebsiteResultDTO result = ossAdapter.setBucketWebsite(bucketName, config);
 
         // 2. 同步到数据库
@@ -101,6 +137,7 @@ public class BucketAuthorizationService {
         log.info("→ 设置传输加速配置并同步: {}", bucketName);
 
         // 1. 设置到OSS
+        AliyunOSSAdapter ossAdapter = getOSSAdapter(bucketName);
         SetBucketTransferAccelerationResultDTO result = ossAdapter.setBucketTransferAcceleration(bucketName, config);
 
         // 2. 同步到数据库
@@ -118,6 +155,7 @@ public class BucketAuthorizationService {
 
         try {
             // 1. 从OSS获取所有配置
+            AliyunOSSAdapter ossAdapter = getOSSAdapter(bucketName);
             Map<String, Object> ossConfig = ossAdapter.getBucketAuthorizationConfig(bucketName);
 
             // 2. 确保数据库记录存在

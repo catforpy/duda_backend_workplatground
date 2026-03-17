@@ -1,10 +1,6 @@
 package com.duda.file.provider.config;
 
-import com.duda.file.adapter.AliyunOSSAdapter;
-import com.duda.file.dto.bucket.ApiKeyConfigDTO;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
@@ -17,34 +13,10 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class OSSAdapterConfig {
 
-    @Value("${aliyun.sts.access-key-id}")
-    private String accessKeyId;
+    // ⚠️ 已废弃：配置文件密钥已迁移到数据库
+    // OSS适配器Bean不再在这里创建，改由各个服务组件按需创建
+    // 这样可以从数据库读取密钥并解密后动态初始化OSS适配器
 
-    @Value("${aliyun.sts.access-key-secret}")
-    private String accessKeySecret;
-
-    @Value("${aliyun.sts.endpoint:sts.cn-hangzhou.aliyuncs.com}")
-    private String endpoint;
-
-    @Value("${aliyun.sts.region:cn-hangzhou}")
-    private String region;
-
-    /**
-     * 创建 AliyunOSSAdapter Bean
-     */
-    @Bean
-    public AliyunOSSAdapter aliyunOSSAdapter() {
-        log.info("初始化 AliyunOSSAdapter...");
-        log.info("AccessKey ID: {}", accessKeyId);
-        log.info("Endpoint: {}", endpoint);
-        log.info("Region: {}", region);
-
-        ApiKeyConfigDTO config = new ApiKeyConfigDTO();
-        config.setAccessKeyId(accessKeyId);
-        config.setAccessKeySecret(accessKeySecret);
-        config.setEndpoint(endpoint);
-        config.setRegion(region);
-
-        return new AliyunOSSAdapter(config);
-    }
+    // Bean创建已禁用，由其他组件按需创建
+    // 避免启动时因配置文件缺少密钥而失败
 }

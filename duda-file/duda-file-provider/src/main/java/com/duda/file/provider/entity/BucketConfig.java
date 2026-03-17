@@ -143,58 +143,6 @@ public class BucketConfig implements Serializable {
      */
     private Boolean lifecycleEnabled;
 
-    // ==================== 新增：OSS高级功能配置（JSON格式） ====================
-
-    /**
-     * 生命周期规则配置（JSON格式）
-     */
-    private String lifecycleConfig;
-
-    /**
-     * CORS规则配置（JSON格式）
-     */
-    private String corsConfig;
-
-    /**
-     * 防盗链配置（JSON格式）
-     */
-    private String refererConfig;
-
-    /**
-     * Bucket策略文档（JSON格式）
-     */
-    private String bucketPolicy;
-
-    /**
-     * 跨区域复制配置（JSON格式）
-     */
-    private String replicationConfig;
-
-    /**
-     * 访问跟踪配置（JSON格式）
-     */
-    private String accessMonitorConfig;
-
-    /**
-     * 存储空间清单配置（JSON格式）
-     */
-    private String inventoryConfig;
-
-    /**
-     * 静态网站托管配置（JSON格式）
-     */
-    private String websiteConfig;
-
-    /**
-     * 日志转存配置（JSON格式）
-     */
-    private String loggingConfig;
-
-    /**
-     * 合规保留策略配置（JSON格式）
-     */
-    private String wormConfig;
-
     /**
      * 是否开启传输加速：0-否 1-是
      */
@@ -300,65 +248,65 @@ public class BucketConfig implements Serializable {
      */
     private Boolean isDeleted;
 
-    // ==================== 新增：OSS配置同步相关字段 ====================
+    // ==================== OSS高级配置字段（JSON格式，与数据库一致） ====================
 
     /**
-     * 是否激活：0-否 1-是
+     * 生命周期规则配置（JSON格式）
+     * 数据库字段：lifecycle_config
      */
-    private Boolean isActive;
+    private String lifecycleConfig;
 
     /**
-     * 配置同步时间（最近一次从阿里云同步配置的时间）
+     * CORS规则配置（JSON格式）
+     * 数据库字段：cors_config
      */
-    private LocalDateTime syncTime;
+    private String corsConfig;
 
     /**
-     * ACL配置（JSON格式，从阿里云读取）
+     * 防盗链配置（JSON格式）
+     * 数据库字段：referer_config
      */
-    private String configAcl;
+    private String refererConfig;
 
     /**
-     * Policy配置（JSON格式，从阿里云读取）
+     * Bucket策略文档（JSON格式）
+     * 数据库字段：bucket_policy
      */
-    private String configPolicy;
+    private String bucketPolicy;
 
     /**
-     * 防盗链配置（JSON格式，从阿里云读取）
+     * 跨区域复制配置（JSON格式）
+     * 数据库字段：replication_config
      */
-    private String configReferer;
+    private String replicationConfig;
 
     /**
-     * CORS配置（JSON格式，从阿里云读取）
+     * 访问跟踪配置（JSON格式）
+     * 数据库字段：access_monitor_config
      */
-    private String configCors;
+    private String accessMonitorConfig;
 
     /**
-     * 生命周期配置（JSON格式，从阿里云读取）
+     * 存储空间清单配置（JSON格式）
+     * 数据库字段：inventory_config
      */
-    private String configLifecycle;
+    private String inventoryConfig;
 
     /**
-     * 版本控制配置（JSON格式，从阿里云读取）
+     * 静态网站托管配置（JSON格式）
+     * 数据库字段：website_config
      */
-    private String configVersioning;
+    private String websiteConfig;
 
     /**
-     * 日志转存配置（JSON格式，从阿里云读取）
+     * 日志转存配置（JSON格式）
+     * 数据库字段：logging_config
      */
-    private String configLogging;
+    private String loggingConfig;
 
     /**
-     * 静态网站托管配置（JSON格式，从阿里云读取）
+     * 合规保留策略配置（JSON格式）
+     * 数据库字段：worm_config
      */
-    private String configWebsite;
-
-    /**
-     * 传输加速配置（JSON格式，从阿里云读取）
-     */
-    private String configTransferAcceleration;
-
-    /**
-     * WORM配置（JSON格式，从阿里云读取）
-     */
-    private String configWorm;
+    private String wormConfig;
 }

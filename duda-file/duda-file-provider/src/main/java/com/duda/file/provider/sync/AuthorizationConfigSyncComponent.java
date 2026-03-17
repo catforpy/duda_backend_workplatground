@@ -2,6 +2,9 @@ package com.duda.file.provider.sync;
 
 import com.duda.file.adapter.AliyunOSSAdapter;
 import com.duda.file.dto.bucket.ApiKeyConfigDTO;
+import com.duda.file.provider.entity.BucketConfig;
+import com.duda.file.provider.mapper.BucketConfigMapper;
+import com.duda.file.provider.util.AesEncryptUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,20 +25,20 @@ import java.util.Map;
 @Component
 public class AuthorizationConfigSyncComponent implements CommandLineRunner {
 
-    @Value("${aliyun.sts.access-key-id}")
-    private String accessKeyId;
-
-    @Value("${aliyun.sts.access-key-secret}")
-    private String accessKeySecret;
-
     @Value("${duda.file.storage.default-region:cn-hangzhou}")
-    private String region;
+    private String defaultRegion;
 
-    @Value("${sync.bucket.name:duda-java-backend-test}")
+    @Value("${sync.bucket.name:test-bucket}")
     private String bucketName;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private BucketConfigMapper bucketConfigMapper;
+
+    @Autowired
+    private AesEncryptUtil aesEncryptUtil;
 
     @Override
     public void run(String... args) throws Exception {
@@ -52,25 +55,43 @@ public class AuthorizationConfigSyncComponent implements CommandLineRunner {
             Integer result = jdbcTemplate.queryForObject("SELECT 1", Integer.class);
             log.info("✓ 数据库连接成功: {}", result);
 
-            // 2. 初始化OSS适配器
+            // 2. 从数据库获取bucket配置
             log.info("\n========================================");
-            log.info("步骤2: 初始化OSS适配器");
+            log.info("步骤2: 从数据库获取bucket配置");
             log.info("========================================");
+
+            BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
+            if (bucketConfig == null) {
+                log.warn("⚠️ Bucket配置不存在: {}", bucketName);
+                log.info("跳过授权配置同步");
+                return;
+            }
+
+            log.info("✓ 找到Bucket配置: {}", bucketName);
+            log.info("  - Region: {}", bucketConfig.getRegion());
+            log.info("  - Storage Type: {}", bucketConfig.getStorageType());
+
+            // 3. 解密密钥并初始化OSS适配器
+            log.info("\n========================================");
+            log.info("步骤3: 解密密钥并初始化OSS适配器");
+            log.info("========================================");
+
+            String accessKeyId = aesEncryptUtil.decrypt(bucketConfig.getAccessKeyId());
+            String accessKeySecret = aesEncryptUtil.decrypt(bucketConfig.getAccessKeySecret());
 
             ApiKeyConfigDTO config = ApiKeyConfigDTO.builder()
                 .accessKeyId(accessKeyId)
                 .accessKeySecret(accessKeySecret)
-                .region(region)
+                .region(bucketConfig.getRegion())
+                .endpoint(bucketConfig.getEndpoint())
                 .build();
 
             AliyunOSSAdapter ossAdapter = new AliyunOSSAdapter(config);
             log.info("✓ OSS适配器初始化成功");
-            log.info("  - Bucket: {}", bucketName);
-            log.info("  - Region: {}", region);
 
-            // 3. 从OSS获取授权配置
+            // 4. 从OSS获取授权配置
             log.info("\n========================================");
-            log.info("步骤3: 从OSS获取授权配置");
+            log.info("步骤4: 从OSS获取授权配置");
             log.info("========================================");
 
             Map<String, Object> authConfig = ossAdapter.getBucketAuthorizationConfig(bucketName);
@@ -82,25 +103,25 @@ public class AuthorizationConfigSyncComponent implements CommandLineRunner {
             log.info("  - 防盗链: {}", authConfig.get("refererEnabled"));
             log.info("  - 版本控制: {}", authConfig.get("versioningEnabled"));
 
-            // 4. 确保记录存在
+            // 5. 确保记录存在
             log.info("\n========================================");
-            log.info("步骤4: 确保数据库记录存在");
+            log.info("步骤5: 确保数据库记录存在");
             log.info("========================================");
 
             ensureStatisticsExists();
 
-            // 5. 写入授权配置
+            // 6. 写入授权配置
             log.info("\n========================================");
-            log.info("步骤5: 写入授权配置到数据库");
+            log.info("步骤6: 写入授权配置到数据库");
             log.info("========================================");
 
             updateAuthorizationConfig(authConfig);
 
             log.info("✓ 授权配置已写入数据库");
 
-            // 6. 验证数据
+            // 7. 验证数据
             log.info("\n========================================");
-            log.info("步骤6: 验证数据库中的数据");
+            log.info("步骤7: 验证数据库中的数据");
             log.info("========================================");
 
             verifyData();
@@ -128,6 +149,11 @@ public class AuthorizationConfigSyncComponent implements CommandLineRunner {
 
         if (count == null || count == 0) {
             log.info("→ 记录不存在，创建新记录...");
+
+            // 从bucketConfig获取region信息
+            BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
+            String region = (bucketConfig != null) ? bucketConfig.getRegion() : defaultRegion;
+
             jdbcTemplate.update(
                 "INSERT INTO bucket_statistics (" +
                     "bucket_name, region, storage_type, " +
@@ -146,84 +172,18 @@ public class AuthorizationConfigSyncComponent implements CommandLineRunner {
 
     /**
      * 更新授权配置到数据库
+     *
+     * 注意：bucket_statistics表已精简，删除了配置字段（acl_type, cors_enabled等）
+     * 这些配置现在只存储在bucket_config表中
      */
     private void updateAuthorizationConfig(Map<String, Object> config) {
-        // 更新ACL
-        String acl = (String) config.get("acl");
-        if (acl != null) {
-            jdbcTemplate.update(
-                "UPDATE bucket_statistics SET acl_type = ?, updated_time = NOW() WHERE bucket_name = ?",
-                acl, bucketName
-            );
-            log.info("  ✓ ACL: {}", acl);
-        }
+        // ⚠️ bucket_statistics表已精简，不再存储配置字段
+        // 以下配置字段已从bucket_statistics表中删除：
+        // - acl_type, bucket_policy, cors_enabled, referer_enabled
+        // - versioning_enabled, website_enabled, worm_enabled
+        // 这些配置现在只存在于bucket_config表中
 
-        // 更新Bucket Policy
-        Boolean bucketPolicyEnabled = (Boolean) config.get("bucketPolicyEnabled");
-        if (bucketPolicyEnabled != null && bucketPolicyEnabled) {
-            String bucketPolicy = (String) config.get("bucketPolicy");
-            if (bucketPolicy != null) {
-                jdbcTemplate.update(
-                    "UPDATE bucket_statistics SET bucket_policy = ?, updated_time = NOW() WHERE bucket_name = ?",
-                    bucketPolicy, bucketName
-                );
-                log.info("  ✓ Bucket Policy: 已设置");
-            }
-        } else {
-            log.info("  ✓ Bucket Policy: 未启用");
-        }
-
-        // 更新CORS
-        Boolean corsEnabled = (Boolean) config.get("corsEnabled");
-        if (corsEnabled != null) {
-            jdbcTemplate.update(
-                "UPDATE bucket_statistics SET cors_enabled = ?, updated_time = NOW() WHERE bucket_name = ?",
-                corsEnabled ? 1 : 0, bucketName
-            );
-            log.info("  ✓ CORS: {}", corsEnabled ? "已启用" : "未启用");
-        }
-
-        // 更新防盗链
-        Boolean refererEnabled = (Boolean) config.get("refererEnabled");
-        if (refererEnabled != null) {
-            jdbcTemplate.update(
-                "UPDATE bucket_statistics SET referer_enabled = ?, updated_time = NOW() WHERE bucket_name = ?",
-                refererEnabled ? 1 : 0, bucketName
-            );
-            log.info("  ✓ 防盗链: {}", refererEnabled ? "已启用" : "未启用");
-        }
-
-        // 更新版本控制
-        Boolean versioningEnabled = (Boolean) config.get("versioningEnabled");
-        if (versioningEnabled != null) {
-            jdbcTemplate.update(
-                "UPDATE bucket_statistics SET versioning_enabled = ?, updated_time = NOW() WHERE bucket_name = ?",
-                versioningEnabled ? 1 : 0, bucketName
-            );
-            log.info("  ✓ 版本控制: {}", versioningEnabled ? "已启用" : "未启用");
-        }
-
-        // 更新Website
-        Boolean websiteEnabled = (Boolean) config.get("websiteEnabled");
-        if (websiteEnabled != null) {
-            jdbcTemplate.update(
-                "UPDATE bucket_statistics SET website_enabled = ?, updated_time = NOW() WHERE bucket_name = ?",
-                websiteEnabled ? 1 : 0, bucketName
-            );
-            log.info("  ✓ Website: {}", websiteEnabled ? "已启用" : "未启用");
-        }
-
-        // 更新WORM
-        Boolean wormEnabled = (Boolean) config.get("wormEnabled");
-        if (wormEnabled != null) {
-            jdbcTemplate.update(
-                "UPDATE bucket_statistics SET worm_enabled = ?, updated_time = NOW() WHERE bucket_name = ?",
-                wormEnabled ? 1 : 0, bucketName
-            );
-            log.info("  ✓ WORM: {}", wormEnabled ? "已启用" : "未启用");
-        }
-
-        // 更新同步时间
+        // 只更新同步时间
         jdbcTemplate.update(
             "UPDATE bucket_statistics SET last_sync_time = NOW(), updated_time = NOW() WHERE bucket_name = ?",
             bucketName
