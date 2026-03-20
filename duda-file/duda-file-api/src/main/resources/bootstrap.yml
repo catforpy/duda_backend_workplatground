@@ -3,12 +3,34 @@
 server:
   port: 8085
   address: 0.0.0.0  # 绑定到所有网卡，支持局域网访问
+  # 最大请求大小（支持大文件上传）
+  max-http-request-header-size: 65536
+  tomcat:
+    # 最大连接数
+    max-connections: 10000
+    # 最大等待队列长度
+    accept-count: 100
+    # 最大请求头大小
+    max-http-form-post-size: 100MB
 
 spring:
   application:
     name: duda-file-api
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
+  # 文件上传配置
+  servlet:
+    multipart:
+      # 是否启用文件上传
+      enabled: true
+      # 单个文件最大大小（默认1MB，改为1GB）
+      max-file-size: 1GB
+      # 总请求最大大小（默认10MB，改为2GB）
+      max-request-size: 2GB
+      # 文件大小阈值（超过此值将写入磁盘，而非内存）
+      file-size-threshold: 10MB
+      # 是否延迟解析（文件上传时）
+      resolve-lazily: false
 
   cloud:
     nacos:
@@ -79,7 +101,7 @@ management:
     defaults:
       enabled: true
 
-# Swagger 配置（SpringDoc OpenAPI）
+# Swagger 配置（SpringDoc OpenAPI + Knife4j）
 springdoc:
   api-docs:
     enabled: true
@@ -92,6 +114,20 @@ springdoc:
   show-actuator: false
   default-consumes-media-type: application/json
   default-produces-media-type: application/json
+
+# Knife4j增强配置
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+    swagger-model-name: 实体类列表
+  production: false
+  cors: true
+  # 增强功能
+  enable-aggregation: true
+  aggregation:
+    # 聚合其他微服务的文档（如果需要）
+    enable: false
 
 # OSS配置
 oss:

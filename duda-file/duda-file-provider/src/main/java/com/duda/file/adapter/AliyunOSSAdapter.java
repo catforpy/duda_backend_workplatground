@@ -16,6 +16,7 @@ import com.duda.file.dto.object.ObjectDTO;
 import com.duda.file.dto.object.ObjectMetadataDTO;
 import com.duda.file.dto.upload.UploadResultDTO;
 import com.duda.file.enums.StorageType;
+import com.duda.file.provider.entity.BucketConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 
@@ -50,7 +51,14 @@ public class AliyunOSSAdapter implements StorageService, DisposableBean {
     public AliyunOSSAdapter(ApiKeyConfigDTO config) {
         this.config = config;
         this.endpoint = buildEndpoint(config.getEndpoint(), config.getRegion());
-        this.region = config.getRegion();
+
+        // 清理region值,去除"oss-"前缀(如果存在)
+        String cleanRegion = config.getRegion();
+        if (cleanRegion != null && cleanRegion.startsWith("oss-")) {
+            cleanRegion = cleanRegion.substring(4);
+            log.warn("Region字段包含'oss-'前缀,已自动去除: {} -> {}", config.getRegion(), cleanRegion);
+        }
+        this.region = cleanRegion;
 
         // 创建OSS客户端（使用官方推荐模式）
         CredentialsProvider credentialsProvider = new DefaultCredentialProvider(
@@ -60,6 +68,14 @@ public class AliyunOSSAdapter implements StorageService, DisposableBean {
 
         ClientBuilderConfiguration clientBuilderConfiguration = new ClientBuilderConfiguration();
         clientBuilderConfiguration.setSignatureVersion(SignVersion.V4);
+
+        // 设置超时时间（解决大文件上传超时问题）
+        clientBuilderConfiguration.setSocketTimeout(300000);  // Socket读取超时：5分钟
+        clientBuilderConfiguration.setConnectionTimeout(60000);  // 连接超时：1分钟
+        clientBuilderConfiguration.setConnectionRequestTimeout(60000);  // 连接请求超时：1分钟
+
+        log.info("OSS客户端超时配置 - Socket超时: {}ms, 连接超时: {}ms, 连接请求超时: {}ms",
+                300000, 60000, 60000);
 
         this.ossClient = OSSClientBuilder.create()
             .endpoint(endpoint)
@@ -83,12 +99,28 @@ public class AliyunOSSAdapter implements StorageService, DisposableBean {
             return endpoint;
         }
         // 使用region构建默认endpoint
-        return "https://oss-" + region + ".aliyuncs.com";
+        // 如果region已经包含"oss-"前缀,先去除
+        String cleanRegion = region;
+        if (region != null && region.startsWith("oss-")) {
+            cleanRegion = region.substring(4);
+            log.warn("Region字段包含'oss-'前缀,已自动去除: {} -> {}", region, cleanRegion);
+        }
+        return "https://oss-" + cleanRegion + ".aliyuncs.com";
     }
 
     @Override
     public StorageType getStorageType() {
         return StorageType.ALIYUN_OSS;
+    }
+
+    /**
+     * 获取OSS客户端实例
+     * 用于同步服务等需要直接访问OSS SDK的场景
+     *
+     * @return OSS客户端实例
+     */
+    public OSS getOSSClient() {
+        return this.ossClient;
     }
 
     // ==================== Bucket操作 ====================
@@ -101,7 +133,7 @@ public class AliyunOSSAdapter implements StorageService, DisposableBean {
             // 设置存储类型
             String storageClass = (String) config.get("storageClass");
             if (storageClass != null) {
-                request.setStorageClass(StorageClass.valueOf(storageClass));
+                request.setStorageClass(convertStorageClass(storageClass));
             }
 
             // 设置ACL
@@ -117,13 +149,37 @@ public class AliyunOSSAdapter implements StorageService, DisposableBean {
             bucket.setName(bucketName);
             bucket.setLocation(region);
             bucket.setCreationDate(new Date());
-            bucket.setStorageClass(storageClass != null ? StorageClass.valueOf(storageClass) : StorageClass.Standard);
+            bucket.setStorageClass(storageClass != null ? convertStorageClass(storageClass) : StorageClass.Standard);
 
             return convertToBucketDTO(bucket);
 
         } catch (Exception e) {
             log.error("Failed to create bucket: {}", bucketName, e);
             throw new StorageException("CREATE_BUCKET_FAILED", "Failed to create bucket: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 转换存储类型枚举
+     * 将系统内部枚举值转换为阿里云 SDK 的枚举值
+     */
+    private StorageClass convertStorageClass(String storageClass) {
+        if (storageClass == null) {
+            return StorageClass.Standard;
+        }
+        switch (storageClass.toUpperCase()) {
+            case "STANDARD":
+                return StorageClass.Standard;
+            case "IA":
+                return StorageClass.IA;
+            case "ARCHIVE":
+                return StorageClass.Archive;
+            case "COLD_ARCHIVE":
+            case "COLD-ARCHIVE":
+                return StorageClass.ColdArchive;
+            default:
+                log.warn("Unknown storage class: {}, using Standard", storageClass);
+                return StorageClass.Standard;
         }
     }
 
@@ -153,6 +209,18 @@ public class AliyunOSSAdapter implements StorageService, DisposableBean {
         try {
             // 使用getBucketInfo获取bucket详细信息
             BucketInfo bucketInfo = ossClient.getBucketInfo(bucketName);
+
+            // 打印完整的返回信息，方便调试
+            log.info("========== OSS BucketInfo 完整返回值 ==========");
+            log.info("Bucket: {}", bucketInfo.getBucket());
+            log.info("Name: {}", bucketInfo.getBucket().getName());
+            log.info("Location: {}", bucketInfo.getBucket().getLocation());
+            log.info("CreationDate: {}", bucketInfo.getBucket().getCreationDate());
+            log.info("StorageClass: {}", bucketInfo.getBucket().getStorageClass());
+            log.info("Owner: {}", bucketInfo.getBucket().getOwner());
+            log.info("DataRedundancyType: {}", bucketInfo.getDataRedundancyType());
+            log.info("AccessMonitor: {}", bucketInfo.getBucket().getAccessMonitor());
+            log.info("==========================================");
 
             Bucket bucket = new Bucket();
             bucket.setName(bucketInfo.getBucket().getName());
@@ -223,6 +291,43 @@ public class AliyunOSSAdapter implements StorageService, DisposableBean {
         } catch (Exception e) {
             log.error("Failed to get bucket location: {}", bucketName, e);
             throw new StorageException("GET_BUCKET_LOCATION_FAILED", "Failed to get bucket location: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 获取 Bucket 统计信息（存储容量、文件数量等）
+     * 调用阿里云 OSS SDK 的 getBucketStat 方法
+     */
+    public BucketStat getBucketStat(String bucketName) {
+        try {
+            BucketStat stat = ossClient.getBucketStat(bucketName);
+
+            // 打印完整的返回信息，方便调试
+            log.info("========== OSS BucketStat 完整返回值 ==========");
+            log.info("StorageSize: {}", stat.getStorageSize());
+            log.info("ObjectCount: {}", stat.getObjectCount());
+            log.info("MultipartUploadCount: {}", stat.getMultipartUploadCount());
+            log.info("StandardStorage: {}", stat.getStandardStorage());
+            log.info("StandardObjectCount: {}", stat.getStandardObjectCount());
+            log.info("InfrequentAccessStorage: {}", stat.getInfrequentAccessStorage());
+            log.info("InfrequentAccessRealStorage: {}", stat.getInfrequentAccessRealStorage());
+            log.info("InfrequentAccessObjectCount: {}", stat.getInfrequentAccessObjectCount());
+            log.info("ArchiveStorage: {}", stat.getArchiveStorage());
+            log.info("ArchiveRealStorage: {}", stat.getArchiveRealStorage());
+            log.info("ArchiveObjectCount: {}", stat.getArchiveObjectCount());
+            log.info("ColdArchiveStorage: {}", stat.getColdArchiveStorage());
+            log.info("ColdArchiveRealStorage: {}", stat.getColdArchiveRealStorage());
+            log.info("ColdArchiveObjectCount: {}", stat.getColdArchiveObjectCount());
+            log.info("LiveChannelCount: {}", stat.getLiveChannelCount());
+            log.info("LastModifiedTime: {}", stat.getLastModifiedTime());
+            log.info("===========================================");
+
+            log.info("获取Bucket统计信息成功: bucketName={}, storageSize={}, objectCount={}",
+                bucketName, stat.getStorageSize(), stat.getObjectCount());
+            return stat;
+        } catch (Exception e) {
+            log.error("Failed to get bucket stat: {}", bucketName, e);
+            throw new StorageException("GET_BUCKET_STAT_FAILED", "Failed to get bucket stat: " + e.getMessage(), e);
         }
     }
 

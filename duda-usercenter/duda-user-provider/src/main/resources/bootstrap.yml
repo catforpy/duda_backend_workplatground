@@ -144,6 +144,10 @@ spring:
           - data-id: common-${spring.profiles.active:dev}.yml
             group: COMMON_GROUP
             refresh: true
+#          # 🔥 API密钥加密配置（重要）
+#          - data-id: common-encryption.yml
+#            group: COMMON_GROUP
+#            refresh: true
 
 # Dubbo 最小配置（只保留启动必需的）
 dubbo:
@@ -154,6 +158,9 @@ dubbo:
     port: -1
   registry:
     address: nacos://${spring.cloud.nacos.server-addr}
+    parameters:
+      namespace: ${NACOS_NAMESPACE:duda-dev}
+      group: USER_GROUP
   scan:
     base-packages: com.duda.user.rpc
   consumer:

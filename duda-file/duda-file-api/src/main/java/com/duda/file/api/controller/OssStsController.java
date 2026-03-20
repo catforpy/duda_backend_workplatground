@@ -3,7 +3,7 @@ package com.duda.file.api.controller;
 import com.duda.common.domain.Result;
 import com.duda.file.dto.upload.GetSTSReqDTO;
 import com.duda.file.dto.upload.STSCredentialsDTO;
-import com.duda.file.service.UploadService;
+import com.duda.file.rpc.IUploadRpc;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,7 +39,7 @@ public class OssStsController {
             group = "DUDA_FILE_GROUP",
             check = false
     )
-    private UploadService uploadService;
+    private IUploadRpc uploadRpc;
 
     /**
      * 生成STS临时凭证
@@ -62,7 +62,7 @@ public class OssStsController {
         }
 
         // 调用Dubbo服务生成STS凭证
-        STSCredentialsDTO credentials = uploadService.getSTSForClientUpload(request);
+        STSCredentialsDTO credentials = uploadRpc.getSTSForClientUpload(request);
 
         // 构建响应数据
         Map<String, Object> response = new HashMap<>();

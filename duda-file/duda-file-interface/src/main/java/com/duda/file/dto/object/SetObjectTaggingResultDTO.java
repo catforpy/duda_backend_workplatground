@@ -1,9 +1,13 @@
 package com.duda.file.dto.object;
 
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 /**
  * 设置对象标签结果DTO
@@ -15,7 +19,9 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SetObjectTaggingResultDTO {
+public class SetObjectTaggingResultDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * Bucket名称

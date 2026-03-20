@@ -1,11 +1,16 @@
 package com.duda.file.dto.upload;
 
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 import java.io.InputStream;
+import java.io.Serializable;
 
 /**
  * 上传分片请求DTO
@@ -17,7 +22,9 @@ import java.io.InputStream;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class UploadPartReqDTO {
+public class UploadPartReqDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 存储空间名称

@@ -1,4 +1,4 @@
-package com.duda.file.provider.impl;
+package com.duda.file.service.impl;
 
 import com.duda.file.adapter.StorageService;
 import com.duda.file.provider.helper.SimpleAdapterFactory;
@@ -15,22 +15,25 @@ import com.duda.file.provider.entity.FileAccessLog;
 import com.duda.file.service.DownloadService;
 import com.duda.file.common.exception.StorageException;
 import com.duda.file.common.util.AesUtil;
+import com.duda.user.rpc.IUserApiKeyRpc;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.dubbo.config.annotation.DubboService;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 
+import java.io.InputStream;
 import java.time.LocalDateTime;
 
 /**
  * 下载服务实现
- * Dubbo服务实现类,对外提供文件下载服务
+ * 业务逻辑实现类
  *
- * @author duda
- * @date 2025-03-13
+ * @author DudaNexus
+ * @since 2026-03-17
  */
 @Slf4j
-@DubboService(version = "1.0.0", timeout = 60000)
+@Service
 public class DownloadServiceImpl implements DownloadService {
 
     @Autowired
@@ -45,6 +48,13 @@ public class DownloadServiceImpl implements DownloadService {
     @Autowired
     private FileAccessLogMapper fileAccessLogMapper;
 
+    @DubboReference(
+        version = "1.0.0",
+        group = "USER_GROUP",
+        registry = "userRegistry",
+        check = false
+    )
+    private IUserApiKeyRpc userApiKeyRpc;
     /**
      * API密钥加密密钥(从Nacos配置中心读取)
      */
@@ -53,7 +63,7 @@ public class DownloadServiceImpl implements DownloadService {
 
     @Override
     public DownloadResultDTO download(DownloadReqDTO request) throws StorageException {
-        log.info("Dubbo: Download: {}/{}", request.getBucketName(), request.getObjectKey());
+        log.info("Service: Download: {}/{}", request.getBucketName(), request.getObjectKey());
         LocalDateTime startTime = LocalDateTime.now();
 
         try {
@@ -84,11 +94,11 @@ public class DownloadServiceImpl implements DownloadService {
                         request.getUserId(), metadata.getFileSize(),
                         "SUCCESS", null, startTime);
 
-            log.info("Dubbo: Download completed: {}/{}", request.getBucketName(), request.getObjectKey());
+            log.info("Service: Download completed: {}/{}", request.getBucketName(), request.getObjectKey());
             return result;
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to download: {}/{}", request.getBucketName(), request.getObjectKey(), e);
+            log.error("Service: Failed to download: {}/{}", request.getBucketName(), request.getObjectKey(), e);
 
             // 记录失败的访问日志
             saveAccessLog(request.getBucketName(), request.getObjectKey(), "DOWNLOAD",
@@ -101,7 +111,7 @@ public class DownloadServiceImpl implements DownloadService {
 
     @Override
     public String getDownloadUrl(String bucketName, String objectKey, Integer expiration) {
-        log.info("Dubbo: Getting download URL: {}/{}", bucketName, objectKey);
+        log.info("Service: Getting download URL: {}/{}", bucketName, objectKey);
 
         try {
             // 从数据库查询Bucket配置
@@ -118,7 +128,7 @@ public class DownloadServiceImpl implements DownloadService {
             return adapter.generatePresignedUrl(bucketName, objectKey, exp, "GET");
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to get download URL: {}/{}", bucketName, objectKey, e);
+            log.error("Service: Failed to get download URL: {}/{}", bucketName, objectKey, e);
             throw e;
         }
     }
@@ -135,6 +145,122 @@ public class DownloadServiceImpl implements DownloadService {
         return bucketConfig.getUserId().equals(userId);
     }
 
+    @Override
+    public InputStream getFileStream(String bucketName, String objectKey) {
+        log.info("Service: Getting file stream: {}/{}", bucketName, objectKey);
+
+        try {
+            // 获取存储适配器
+            BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
+            if (bucketConfig == null) {
+                throw new StorageException("BUCKET_NOT_FOUND", "Bucket not found");
+            }
+
+            StorageService adapter = getStorageAdapterFromConfig(bucketConfig);
+
+            // 获取文件流 - 通过downloadObject获取
+            DownloadResultDTO result = adapter.downloadObject(bucketName, objectKey);
+            return result.getInputStream();
+
+        } catch (Exception e) {
+            log.error("Service: Failed to get file stream: {}/{}", bucketName, objectKey, e);
+            throw new StorageException("GET_STREAM_FAILED", "Failed to get file stream: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public byte[] getFileBytes(String bucketName, String objectKey) {
+        log.info("Service: Getting file bytes: {}/{}", bucketName, objectKey);
+
+        try {
+            // 获取存储适配器
+            BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
+            if (bucketConfig == null) {
+                throw new StorageException("BUCKET_NOT_FOUND", "Bucket not found");
+            }
+
+            StorageService adapter = getStorageAdapterFromConfig(bucketConfig);
+
+            // 获取文件字节数组 - 通过downloadObject获取流,然后转换为字节数组
+            DownloadResultDTO result = adapter.downloadObject(bucketName, objectKey);
+            return result.getInputStream().readAllBytes();
+
+        } catch (Exception e) {
+            log.error("Service: Failed to get file bytes: {}/{}", bucketName, objectKey, e);
+            throw new StorageException("GET_BYTES_FAILED", "Failed to get file bytes: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public Long getFileSize(String bucketName, String objectKey) {
+        log.debug("Service: Getting file size: {}/{}", bucketName, objectKey);
+
+        try {
+            // 从数据库查询对象元数据
+            ObjectMetadata metadata = objectMetadataMapper.selectByBucketAndKey(bucketName, objectKey);
+
+            if (metadata == null) {
+                throw new StorageException("OBJECT_NOT_FOUND", "Object not found");
+            }
+
+            return metadata.getFileSize();
+
+        } catch (Exception e) {
+            log.error("Service: Failed to get file size: {}/{}", bucketName, objectKey, e);
+            throw new StorageException("GET_SIZE_FAILED", "Failed to get file size: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public String getContentType(String bucketName, String objectKey) {
+        log.debug("Service: Getting content type: {}/{}", bucketName, objectKey);
+
+        try {
+            // 从数据库查询对象元数据
+            ObjectMetadata metadata = objectMetadataMapper.selectByBucketAndKey(bucketName, objectKey);
+
+            if (metadata == null) {
+                throw new StorageException("OBJECT_NOT_FOUND", "Object not found");
+            }
+
+            return metadata.getContentType();
+
+        } catch (Exception e) {
+            log.error("Service: Failed to get content type: {}/{}", bucketName, objectKey, e);
+            throw new StorageException("GET_CONTENT_TYPE_FAILED", "Failed to get content type: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public Boolean validateDownloadPermission(String bucketName, String objectKey, Long userId) {
+        log.debug("Service: Validating download permission: {}/{}", bucketName, objectKey);
+
+        try {
+            // 1. 检查Bucket权限
+            BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
+            if (bucketConfig == null || bucketConfig.getIsDeleted()) {
+                return false;
+            }
+
+            // 2. 检查用户是否有权限访问Bucket
+            if (!bucketConfig.getUserId().equals(userId)) {
+                return false;
+            }
+
+            // 3. 检查对象是否存在
+            ObjectMetadata metadata = objectMetadataMapper.selectByBucketAndKey(bucketName, objectKey);
+            if (metadata == null || !"active".equals(metadata.getStatus())) {
+                return false;
+            }
+
+            return true;
+
+        } catch (Exception e) {
+            log.error("Service: Failed to validate download permission: {}/{}", bucketName, objectKey, e);
+            return false;
+        }
+    }
+
     // ==================== 私有辅助方法 ====================
 
     /**
@@ -147,7 +273,7 @@ public class DownloadServiceImpl implements DownloadService {
             return getStorageAdapterFromConfig(bucketConfig);
         }
 
-        // 如果数据库中没有配置，使用默认配置
+        // 如果数据库中没有配置,使用默认配置
         log.warn("Bucket config not found in database, using default config: {}", bucketName);
 
         ApiKeyConfigDTO apiKeyConfig = ApiKeyConfigDTO.builder()
@@ -165,12 +291,20 @@ public class DownloadServiceImpl implements DownloadService {
      * 根据Bucket配置创建存储适配器
      */
     private StorageService getStorageAdapterFromConfig(BucketConfig bucketConfig) {
-        StorageType storageType = StorageType.valueOf(bucketConfig.getStorageType());
+        StorageType storageType = StorageType.fromCode(bucketConfig.getStorageType());
+
+        // 通过RPC调用获取API密钥信息
+        com.duda.user.dto.userapikey.UserApiKeyDTO apiKeyDTO = userApiKeyRpc.getUserApiKeyById(bucketConfig.getApiKeyId());
+
+        if (apiKeyDTO == null) {
+            throw new StorageException("API_KEY_NOT_FOUND",
+                "API密钥不存在，keyId: " + bucketConfig.getApiKeyId());
+        }
 
         ApiKeyConfigDTO apiKeyConfig = ApiKeyConfigDTO.builder()
             .storageType(storageType)
-            .accessKeyId(decryptApiKey(bucketConfig.getAccessKeyId()))
-            .accessKeySecret(decryptApiKey(bucketConfig.getAccessKeySecret()))
+            .accessKeyId(apiKeyDTO.getPlainAccessKeyId())
+            .accessKeySecret(apiKeyDTO.getPlainAccessKeySecret())
             .endpoint(bucketConfig.getEndpoint())
             .region(bucketConfig.getRegion())
             .build();

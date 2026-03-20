@@ -1,12 +1,18 @@
 package com.duda.file.dto.object;
 
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 import java.util.List;
+import java.io.Serializable;
 import java.util.Map;
+import java.io.Serializable;
 
 /**
  * 目录统计信息DTO
@@ -18,7 +24,9 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DirectoryStatisticsDTO {
+public class DirectoryStatisticsDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 存储空间名称

@@ -10,7 +10,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# 添加应用JAR (使用可执行的fat jar)
+# 添加应用JAR (使用可执行JAR)
 ADD target/duda-file-api-1.0.0-SNAPSHOT-exec.jar app.jar
 
 # 暴露端口

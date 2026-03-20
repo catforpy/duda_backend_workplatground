@@ -1,11 +1,16 @@
 package com.duda.file.dto.upload;
 
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 import java.util.Map;
+import java.io.Serializable;
 
 /**
  * 预签名URL请求DTO
@@ -17,7 +22,9 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PresignedUrlReqDTO {
+public class PresignedUrlReqDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 存储空间名称

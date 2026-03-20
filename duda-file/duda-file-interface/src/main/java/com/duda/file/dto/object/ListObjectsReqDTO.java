@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
+
 /**
  * 列出对象请求DTO
  *
@@ -15,7 +17,9 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ListObjectsReqDTO {
+public class ListObjectsReqDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 存储空间名称

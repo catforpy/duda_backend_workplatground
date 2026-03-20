@@ -31,6 +31,9 @@ public class AuthorizationConfigSyncComponent implements CommandLineRunner {
     @Value("${sync.bucket.name:test-bucket}")
     private String bucketName;
 
+    @Value("${sync.enabled:false}")
+    private boolean syncEnabled;
+
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -42,6 +45,13 @@ public class AuthorizationConfigSyncComponent implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
+        if (!syncEnabled) {
+            log.info("========================================");
+            log.info("授权配置同步已禁用 (sync.enabled=false)");
+            log.info("========================================");
+            return;
+        }
+
         log.info("╔════════════════════════════════════════╗");
         log.info("║   授权配置自动同步 - 开始执行             ║");
         log.info("╚════════════════════════════════════════╝");

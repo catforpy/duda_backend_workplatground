@@ -1,11 +1,16 @@
 package com.duda.file.dto.object;
 
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 import java.util.List;
+import java.io.Serializable;
 
 /**
  * 批量删除结果DTO
@@ -17,7 +22,9 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class BatchDeleteResultDTO {
+public class BatchDeleteResultDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 存储空间名称

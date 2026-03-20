@@ -1,12 +1,18 @@
 package com.duda.file.dto.upload;
 
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 import java.util.ArrayList;
+import java.io.Serializable;
 import java.util.List;
+import java.io.Serializable;
 
 /**
  * 验证结果DTO

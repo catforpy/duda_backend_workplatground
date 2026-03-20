@@ -8,13 +8,14 @@ import com.duda.file.dto.upload.*;
 import com.duda.file.dto.upload.STSCredentialsDTO;
 import com.duda.file.dto.upload.UploadResultDTO;
 import com.duda.file.dto.upload.UploadPartResultDTO;
-import com.duda.file.service.DownloadService;
-import com.duda.file.service.ObjectService;
-import com.duda.file.service.UploadService;
+import com.duda.file.api.service.ObjectService;
+import com.duda.file.api.service.FileUploadService;
+import com.duda.file.api.service.DownloadService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
+import org.springframework.beans.factory.annotation.Qualifier;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -52,26 +53,17 @@ import java.util.Map;
 @CrossOrigin(originPatterns = "*", maxAge = 3600)
 public class ObjectController {
 
-    @DubboReference(
-        version = "1.0.0",
-        group = "DUDA_FILE_GROUP",
-        check = false
-    )
-    private UploadService uploadService;
-
-    @DubboReference(
-        version = "1.0.0",
-        group = "DUDA_FILE_GROUP",
-        check = false
-    )
-    private DownloadService downloadService;
-
-    @DubboReference(
-        version = "1.0.0",
-        group = "DUDA_FILE_GROUP",
-        check = false
-    )
+    @Resource
+    @Qualifier("objectApiServiceImpl")
     private ObjectService objectService;
+
+    @Resource
+    @Qualifier("fileUploadServiceImpl")
+    private FileUploadService fileUploadService;
+
+    @Resource
+    @Qualifier("downloadApiServiceImpl")
+    private DownloadService downloadService;
 
     // ==================== 文件上传 API ====================
 
@@ -112,16 +104,40 @@ public class ObjectController {
 
         for (MultipartFile file : files) {
             try {
-                // 构建 SimpleUploadReqDTO
-                SimpleUploadReqDTO request = SimpleUploadReqDTO.builder()
-                    .bucketName(bucketName)
-                    .objectKey(objectKey != null ? objectKey : file.getOriginalFilename())
-                    .inputStream(file.getInputStream())
+                // 构建对象键：prefix + objectKey 或 prefix + filename
+                String finalObjectKey;
+                if (objectKey != null && !objectKey.isEmpty()) {
+                    finalObjectKey = prefix != null && !prefix.isEmpty()
+                        ? prefix + (prefix.endsWith("/") ? "" : "/") + objectKey
+                        : objectKey;
+                } else {
+                    String filename = file.getOriginalFilename();
+                    finalObjectKey = prefix != null && !prefix.isEmpty()
+                        ? prefix + (prefix.endsWith("/") ? "" : "/") + filename
+                        : filename;
+                }
+
+                // 构建 SimpleUploadReqDTO - 改用字节数组而不是InputStream
+                // 因为InputStream不能通过Dubbo RPC传递
+
+                // 读取文件为字节数组
+                byte[] fileBytes = file.getBytes();
+
+                // 创建元数据对象
+                ObjectMetadataDTO metadata = ObjectMetadataDTO.builder()
                     .contentLength(file.getSize())
                     .contentType(file.getContentType())
                     .build();
 
-                UploadResultDTO result = uploadService.simpleUpload(request);
+                // 调用 uploadBytes 而不是 simpleUpload
+                UploadResultDTO result = fileUploadService.uploadBytes(
+                    bucketName,
+                    finalObjectKey,
+                    fileBytes,
+                    metadata,
+                    userId  // ✅ 传递 userId 参数
+                );
+
                 results.add(result);
             } catch (Exception e) {
                 return Result.error("文件上传失败: " + e.getMessage());
@@ -157,7 +173,7 @@ public class ObjectController {
         }
 
         // 生成 STS 凭证
-        STSCredentialsDTO credentials = uploadService.getSTSForClientUpload(request);
+        STSCredentialsDTO credentials = fileUploadService.getSTSForClientUpload(request);
 
         return Result.success(credentials);
     }
@@ -174,11 +190,13 @@ public class ObjectController {
     @Operation(summary = "获取POST签名", description = "为前端表单直传生成 POST 签名")
     @GetMapping("/post-signature")
     public Result getPostSignature(
-        @Parameter(description = "Bucket名称（可选，不传则使用默认配置）")
-        @RequestParam(required = false) String bucketName) {
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "用户ID（必填，用于权限验证）", required = true)
+        @RequestParam Long userId) {
 
         // 获取 POST 签名
-        OssPostSignatureDTO signature = uploadService.getOssPostSignature(bucketName);
+        OssPostSignatureDTO signature = fileUploadService.getOssPostSignature(bucketName, userId);
 
         return Result.success(signature);
     }
@@ -224,7 +242,7 @@ public class ObjectController {
             .build();
 
         // 初始化分片上传
-        String uploadId = uploadService.initiateMultipartUpload(request);
+        String uploadId = fileUploadService.initiateMultipartUpload(request);
 
         Map<String, Object> result = new HashMap<>();
         result.put("uploadId", uploadId);
@@ -271,7 +289,7 @@ public class ObjectController {
                 .partSize(partData.getSize())
                 .build();
 
-            UploadPartResultDTO result = uploadService.uploadPart(request);
+            UploadPartResultDTO result = fileUploadService.uploadPart(request);
 
             return Result.success(result);
         } catch (Exception e) {
@@ -322,7 +340,7 @@ public class ObjectController {
             .userId(userId)
             .build();
 
-        UploadResultDTO result = uploadService.completeMultipartUpload(request);
+        UploadResultDTO result = fileUploadService.completeMultipartUpload(request);
 
         return Result.success(result);
     }
@@ -347,7 +365,7 @@ public class ObjectController {
         @Parameter(description = "分片上传ID", required = true)
         @RequestParam String uploadId) {
 
-        uploadService.abortMultipartUpload(bucketName, objectKey, uploadId);
+        fileUploadService.abortMultipartUpload(bucketName, objectKey, uploadId);
 
         return Result.success(null, "分片上传已取消");
     }
@@ -608,13 +626,8 @@ public class ObjectController {
         @Parameter(description = "用户ID", required = true)
         @RequestParam Long userId) {
 
-        // 确保目录路径以 "/" 结尾
-        if (!directoryPath.endsWith("/")) {
-            directoryPath += "/";
-        }
-
-        // TODO: 实现目录创建逻辑
-        // objectService.createDirectory(bucketName, directoryPath, userId);
+        // 调用 Service 层创建目录
+        objectService.createDirectory(bucketName, directoryPath, userId);
 
         return Result.success(null, "目录创建成功");
     }

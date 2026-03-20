@@ -1,14 +1,22 @@
 package com.duda.file.dto.object;
 
 import com.duda.file.enums.AclType;
+import java.io.Serializable;
 import com.duda.file.enums.StorageClass;
+import java.io.Serializable;
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 import java.time.LocalDateTime;
+import java.io.Serializable;
 import java.util.Map;
+import java.io.Serializable;
 
 /**
  * 对象DTO
@@ -21,7 +29,9 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ObjectDTO {
+public class ObjectDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 存储空间名称

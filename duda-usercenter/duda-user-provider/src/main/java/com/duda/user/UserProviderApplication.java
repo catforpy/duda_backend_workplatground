@@ -14,7 +14,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  */
 @SpringBootApplication(scanBasePackages = {"com.duda.user", "com.duda.common"})
 @EnableDiscoveryClient
-@EnableDubbo
+@EnableDubbo(scanBasePackages = "com.duda.user.rpc")
 @MapperScan("com.duda.user.mapper")
 public class UserProviderApplication {
 

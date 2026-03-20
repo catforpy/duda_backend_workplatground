@@ -1,4 +1,4 @@
-package com.duda.file.provider.impl;
+package com.duda.file.service.impl;
 
 import com.duda.file.adapter.StorageService;
 import com.duda.file.provider.helper.SimpleAdapterFactory;
@@ -14,14 +14,16 @@ import com.duda.file.provider.entity.BucketConfig;
 import com.duda.file.provider.entity.ObjectMetadata;
 import com.duda.file.provider.entity.UploadRecord;
 import com.duda.file.provider.entity.FileAccessLog;
-import com.duda.file.provider.service.STSService;
+import com.duda.file.service.STSService;
 import com.duda.file.service.UploadService;
 import com.duda.file.common.exception.StorageException;
 import com.duda.file.common.util.AesUtil;
+import com.duda.user.rpc.IUserApiKeyRpc;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.dubbo.config.annotation.DubboService;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayInputStream;
@@ -31,13 +33,13 @@ import java.util.Map;
 
 /**
  * 上传服务实现
- * Dubbo服务实现类,对外提供文件上传服务
+ * 业务逻辑实现类
  *
- * @author duda
- * @date 2025-03-13
+ * @author DudaNexus
+ * @since 2026-03-17
  */
 @Slf4j
-@DubboService(version = "1.0.0", group = "DUDA_FILE_GROUP", timeout = 60000)
+@Service
 public class UploadServiceImpl implements UploadService {
 
     @Autowired
@@ -58,6 +60,14 @@ public class UploadServiceImpl implements UploadService {
     @Autowired
     private FileAccessLogMapper fileAccessLogMapper;
 
+    @DubboReference(
+        version = "1.0.0",
+        group = "USER_GROUP",
+        registry = "userRegistry",
+        check = false
+    )
+    private IUserApiKeyRpc userApiKeyRpc;
+
     @Autowired
     private STSService stsService;
 
@@ -69,7 +79,7 @@ public class UploadServiceImpl implements UploadService {
 
     @Override
     public UploadResultDTO simpleUpload(SimpleUploadReqDTO request) throws StorageException {
-        log.info("Dubbo: Simple upload: {}/{}", request.getBucketName(), request.getObjectKey());
+        log.info("Service: Simple upload: {}/{}", request.getBucketName(), request.getObjectKey());
         LocalDateTime startTime = LocalDateTime.now();
         String uploadStatus = "COMPLETED";
         String errorMessage = null;
@@ -104,11 +114,11 @@ public class UploadServiceImpl implements UploadService {
                         request.getUserId(), request.getMetadata().getContentLength(),
                         "SUCCESS", null, startTime);
 
-            log.info("Dubbo: Simple upload completed: {}", result.getETag());
+            log.info("Service: Simple upload completed: {}", result.getETag());
             return result;
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to simple upload", e);
+            log.error("Service: Failed to simple upload", e);
             uploadStatus = "FAILED";
             errorMessage = e.getMessage();
             saveUploadRecord(request, null, uploadStatus, errorMessage, startTime);
@@ -117,13 +127,11 @@ public class UploadServiceImpl implements UploadService {
     }
 
     @Override
-    public UploadResultDTO uploadBytes(String bucketName, String objectKey, byte[] data, ObjectMetadataDTO metadata) throws StorageException {
-        log.info("Dubbo: Upload bytes: {}/{}", bucketName, objectKey);
+    public UploadResultDTO uploadBytes(String bucketName, String objectKey, byte[] data, ObjectMetadataDTO metadata, Long userId) throws StorageException {
+        log.info("Service: Upload bytes: {}/{}, userId={}", bucketName, objectKey, userId);
         LocalDateTime startTime = LocalDateTime.now();
 
         try {
-            Long userId = 1L; // TODO: 从上下文获取用户ID
-            
             // 验证Bucket
             BucketConfig bucketConfig = validateAndGetBucket(userId, bucketName);
             StorageService adapter = getStorageAdapterFromConfig(bucketConfig);
@@ -146,23 +154,23 @@ public class UploadServiceImpl implements UploadService {
             // 更新统计
             updateBucketUsage(bucketName, (long) data.length);
 
-            log.info("Dubbo: Upload bytes completed");
+            log.info("Service: Upload bytes completed");
             return result;
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to upload bytes", e);
+            log.error("Service: Failed to upload bytes", e);
             throw e;
         }
     }
 
     @Override
     public String initiateMultipartUpload(InitiateMultipartUploadReqDTO request) throws StorageException {
-        log.info("Dubbo: Initiating multipart upload: {}/{}", request.getBucketName(), request.getObjectKey());
+        log.info("Service: Initiating multipart upload: {}/{}", request.getBucketName(), request.getObjectKey());
         LocalDateTime startTime = LocalDateTime.now();
 
         try {
             Long userId = request.getUserId() != null ? request.getUserId() : 1L;
-            
+
             // 验证Bucket
             BucketConfig bucketConfig = validateAndGetBucket(userId, request.getBucketName());
             StorageService adapter = getStorageAdapterFromConfig(bucketConfig);
@@ -191,18 +199,18 @@ public class UploadServiceImpl implements UploadService {
 
             uploadRecordMapper.insert(record);
 
-            log.info("Dubbo: Multipart upload initiated: uploadId={}", uploadId);
+            log.info("Service: Multipart upload initiated: uploadId={}", uploadId);
             return uploadId;
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to initiate multipart upload", e);
+            log.error("Service: Failed to initiate multipart upload", e);
             throw e;
         }
     }
 
     @Override
     public UploadPartResultDTO uploadPart(UploadPartReqDTO request) throws StorageException {
-        log.info("Dubbo: Uploading part: {}/{}, part={}",
+        log.info("Service: Uploading part: {}/{}, part={}",
                 request.getBucketName(), request.getObjectKey(), request.getPartNumber());
 
         try {
@@ -238,18 +246,18 @@ public class UploadServiceImpl implements UploadService {
                     .uploadTime(LocalDateTime.now())
                     .build();
 
-            log.info("Dubbo: Part uploaded: partNumber={}, eTag={}", request.getPartNumber(), eTag);
+            log.info("Service: Part uploaded: partNumber={}, eTag={}", request.getPartNumber(), eTag);
             return result;
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to upload part", e);
+            log.error("Service: Failed to upload part", e);
             throw e;
         }
     }
 
     @Override
     public UploadResultDTO completeMultipartUpload(CompleteMultipartUploadReqDTO request) throws StorageException {
-        log.info("Dubbo: Completing multipart upload: {}/{}", request.getBucketName(), request.getObjectKey());
+        log.info("Service: Completing multipart upload: {}/{}", request.getBucketName(), request.getObjectKey());
         LocalDateTime startTime = LocalDateTime.now();
 
         try {
@@ -282,18 +290,18 @@ public class UploadServiceImpl implements UploadService {
                 updateBucketUsage(request.getBucketName(), result.getFileSize());
             }
 
-            log.info("Dubbo: Multipart upload completed: {}", result.getETag());
+            log.info("Service: Multipart upload completed: {}", result.getETag());
             return result;
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to complete multipart upload", e);
+            log.error("Service: Failed to complete multipart upload", e);
             throw e;
         }
     }
 
     @Override
     public void abortMultipartUpload(String bucketName, String objectKey, String uploadId) throws StorageException {
-        log.info("Dubbo: Aborting multipart upload: {}/{}, uploadId={}", bucketName, objectKey, uploadId);
+        log.info("Service: Aborting multipart upload: {}/{}, uploadId={}", bucketName, objectKey, uploadId);
 
         try {
             Long userId = 1L; // TODO: 从上下文获取用户ID
@@ -310,17 +318,17 @@ public class UploadServiceImpl implements UploadService {
                 uploadRecordMapper.updateStatus(record.getId(), "CANCELLED");
             }
 
-            log.info("Dubbo: Multipart upload aborted");
+            log.info("Service: Multipart upload aborted");
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to abort multipart upload", e);
+            log.error("Service: Failed to abort multipart upload", e);
             throw e;
         }
     }
 
     @Override
     public ListPartsResultDTO listParts(String bucketName, String objectKey, String uploadId) {
-        log.debug("Dubbo: Listing parts: {}/{}, uploadId={}", bucketName, objectKey, uploadId);
+        log.debug("Service: Listing parts: {}/{}, uploadId={}", bucketName, objectKey, uploadId);
 
         try {
             Long userId = 1L;
@@ -338,14 +346,14 @@ public class UploadServiceImpl implements UploadService {
                     .build();
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to list parts", e);
+            log.error("Service: Failed to list parts", e);
             throw new StorageException("LIST_PARTS_FAILED", "Failed to list parts: " + e.getMessage());
         }
     }
 
     @Override
     public Long appendObject(AppendObjectReqDTO request) throws StorageException {
-        log.info("Dubbo: Appending object: {}/{}", request.getBucketName(), request.getObjectKey());
+        log.info("Service: Appending object: {}/{}", request.getBucketName(), request.getObjectKey());
 
         try {
             Long userId = request.getUserId() != null ? request.getUserId() : 1L;
@@ -370,18 +378,18 @@ public class UploadServiceImpl implements UploadService {
                 objectMetadataMapper.update(metadata);
             }
 
-            log.info("Dubbo: Object appended: position={}", nextPosition);
+            log.info("Service: Object appended: position={}", nextPosition);
             return nextPosition;
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to append object", e);
+            log.error("Service: Failed to append object", e);
             throw e;
         }
     }
 
     @Override
     public STSCredentialsDTO getSTSForClientUpload(GetSTSReqDTO request) {
-        log.info("Dubbo: Getting STS credentials for bucket: {}, prefix: {}",
+        log.info("Service: Getting STS credentials for bucket: {}, prefix: {}",
                  request.getBucketName(), request.getObjectPrefix());
 
         try {
@@ -392,7 +400,8 @@ public class UploadServiceImpl implements UploadService {
             STSCredentialsDTO credentials = stsService.generateSTSCredentials(
                 request.getBucketName(),
                 request.getObjectPrefix(),
-                request.getDurationSeconds()
+                request.getDurationSeconds(),
+                request.getUserId()
             );
 
             // 3. 设置额外的响应信息(使用extra字段存储bucketName和region)
@@ -402,19 +411,19 @@ public class UploadServiceImpl implements UploadService {
             credentials.getExtra().put("bucketName", request.getBucketName());
             credentials.getExtra().put("region", bucketConfig.getRegion());
 
-            log.info("Dubbo: STS credentials generated successfully for bucket: {}", request.getBucketName());
+            log.info("Service: STS credentials generated successfully for bucket: {}", request.getBucketName());
             return credentials;
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to get STS credentials for bucket: {}", request.getBucketName(), e);
-            // 不传递异常对象，避免 Dubbo 序列化问题
+            log.error("Service: Failed to get STS credentials for bucket: {}", request.getBucketName(), e);
+            // 不传递异常对象,避免 Dubbo 序列化问题
             throw new StorageException("STS_FAILED", "Failed to get STS credentials: " + e.getMessage());
         }
     }
 
     @Override
     public String generatePresignedUrl(PresignedUrlReqDTO request) {
-        log.info("Dubbo: Generating presigned URL: {}/{}", request.getBucketName(), request.getObjectKey());
+        log.info("Service: Generating presigned URL: {}/{}", request.getBucketName(), request.getObjectKey());
 
         try {
             Long userId = request.getUserId() != null ? request.getUserId() : 1L;
@@ -429,14 +438,14 @@ public class UploadServiceImpl implements UploadService {
             );
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to generate presigned URL", e);
+            log.error("Service: Failed to generate presigned URL", e);
             throw new StorageException("URL_GENERATION_FAILED", "Failed to generate presigned URL: " + e.getMessage());
         }
     }
 
     @Override
     public Map<String, String> generatePostObjectForm(PostObjectFormReqDTO request) {
-        log.info("Dubbo: Generating post object form: {}", request.getBucketName());
+        log.info("Service: Generating post object form: {}", request.getBucketName());
 
         try {
             Long userId = request.getUserId() != null ? request.getUserId() : 1L;
@@ -450,14 +459,34 @@ public class UploadServiceImpl implements UploadService {
             return result;
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to generate post object form", e);
+            log.error("Service: Failed to generate post object form", e);
             throw new StorageException("FORM_DATA_GENERATION_FAILED", "Failed to generate post object form: " + e.getMessage());
         }
     }
 
     @Override
+    public OssPostSignatureDTO getOssPostSignature(String bucketName, Long userId) {
+        log.info("Service: 获取OSS POST签名, bucket: {}, userId: {}", bucketName, userId);
+
+        try {
+            // ✅ 权限验证：验证用户是否有权限访问该 bucket
+            BucketConfig bucketConfig = validateAndGetBucket(userId, bucketName);
+
+            // ✅ 获取 bucket 的 API Key 配置
+            ApiKeyConfigDTO apiKeyConfig = getApiKeyConfigFromBucket(bucketConfig);
+
+            // 调用签名服务生成签名（传入 API Key）
+            return ossPostSignatureService.getOssPostSignature(bucketName, apiKeyConfig);
+
+        } catch (Exception e) {
+            log.error("Service: 获取OSS POST签名失败, bucket: {}, userId: {}", bucketName, userId, e);
+            throw new StorageException("SIGNATURE_FAILED", "Failed to get OSS post signature: " + e.getMessage());
+        }
+    }
+
+    @Override
     public CallbackUploadDTO generateCallbackUpload(CallbackUploadReqDTO request) {
-        log.info("Dubbo: Generate callback upload: {}", request.getCallbackUrl());
+        log.info("Service: Generate callback upload: {}", request.getCallbackUrl());
 
         try {
             // TODO: 处理上传回调
@@ -474,28 +503,28 @@ public class UploadServiceImpl implements UploadService {
                 .build();
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to generate callback upload", e);
+            log.error("Service: Failed to generate callback upload", e);
             throw new StorageException("CALLBACK_FAILED", "Failed to generate callback upload: " + e.getMessage());
         }
     }
 
     @Override
     public String createResumeUploadRecord(ResumeUploadReqDTO request) {
-        log.info("Dubbo: Creating resume upload record: {}/{}", request.getBucketName(), request.getObjectKey());
+        log.info("Service: Creating resume upload record: {}/{}", request.getBucketName(), request.getObjectKey());
 
         try {
             // TODO: 创建断点续传记录
             return "record-" + System.currentTimeMillis();
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to create resume upload record", e);
+            log.error("Service: Failed to create resume upload record", e);
             throw new StorageException("CREATE_FAILED", "Failed to create resume record: " + e.getMessage());
         }
     }
 
     @Override
     public ResumeUploadInfoDTO getResumeUploadRecord(String recordId) {
-        log.debug("Dubbo: Getting resume upload record: {}", recordId);
+        log.debug("Service: Getting resume upload record: {}", recordId);
 
         try {
             // TODO: 获取断点续传记录
@@ -504,28 +533,28 @@ public class UploadServiceImpl implements UploadService {
                 .build();
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to get resume upload record", e);
+            log.error("Service: Failed to get resume upload record", e);
             throw new StorageException("QUERY_FAILED", "Failed to query resume record: " + e.getMessage());
         }
     }
 
     @Override
     public void deleteResumeUploadRecord(String recordId) {
-        log.info("Dubbo: Deleting resume upload record: {}", recordId);
+        log.info("Service: Deleting resume upload record: {}", recordId);
 
         try {
             // TODO: 从数据库删除断点续传记录
             // uploadRecordMapper.deleteByRecordId(recordId);
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to delete resume upload record", e);
+            log.error("Service: Failed to delete resume upload record", e);
             throw new StorageException("DELETE_FAILED", "Failed to delete resume record: " + e.getMessage());
         }
     }
 
     @Override
     public UploadStrategy selectUploadStrategy(long fileSize) {
-        log.debug("Dubbo: Selecting upload strategy: fileSize={}", fileSize);
+        log.debug("Service: Selecting upload strategy: fileSize={}", fileSize);
 
         // 小文件(<100MB): 简单上传
         if (fileSize < 100 * 1024 * 1024) {
@@ -539,7 +568,7 @@ public class UploadServiceImpl implements UploadService {
 
     @Override
     public long calculatePartSize(long fileSize, int partCount) {
-        log.debug("Dubbo: Calculating part size: fileSize={}, partCount={}", fileSize, partCount);
+        log.debug("Service: Calculating part size: fileSize={}, partCount={}", fileSize, partCount);
 
         // 计算最优分片大小
         // 阿里云OSS: 100KB ~ 5GB
@@ -562,7 +591,7 @@ public class UploadServiceImpl implements UploadService {
 
     @Override
     public ValidationResult validateUploadRequest(SimpleUploadReqDTO request) {
-        log.debug("Dubbo: Validating upload request: {}", request.getBucketName());
+        log.debug("Service: Validating upload request: {}", request.getBucketName());
 
         try {
             // 验证上传请求
@@ -593,7 +622,7 @@ public class UploadServiceImpl implements UploadService {
                 .build();
 
         } catch (Exception e) {
-            log.error("Dubbo: Failed to validate upload request", e);
+            log.error("Service: Failed to validate upload request", e);
             return ValidationResult.builder()
                 .valid(false)
                 .errorCode("VALIDATION_ERROR")
@@ -602,34 +631,98 @@ public class UploadServiceImpl implements UploadService {
         }
     }
 
-    public Boolean checkPermission(String bucketName, Long userId) {
-        // 从数据库查询Bucket配置
-        BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
-
-        if (bucketConfig == null || bucketConfig.getIsDeleted()) {
-            return false;
-        }
-
-        return bucketConfig.getUserId().equals(userId);
-    }
-
     // ==================== 私有辅助方法 ====================
 
     /**
      * 验证并获取Bucket配置
      */
     private BucketConfig validateAndGetBucket(Long userId, String bucketName) {
+        log.info("【权限验证】开始验证 bucket 访问权限");
+        log.info("【权限验证】请求 userId: {}, bucketName: {}", userId, bucketName);
+
         BucketConfig bucketConfig = bucketConfigMapper.selectByBucketName(bucketName);
         if (bucketConfig == null) {
             throw new StorageException("BUCKET_NOT_FOUND", "Bucket not found: " + bucketName);
         }
+
+        log.info("【权限验证】Bucket配置 - userId: {}, apiKeyId: {}, isDeleted: {}",
+                bucketConfig.getUserId(), bucketConfig.getApiKeyId(), bucketConfig.getIsDeleted());
+
         if (bucketConfig.getIsDeleted()) {
             throw new StorageException("BUCKET_DELETED", "Bucket has been deleted");
         }
-        if (!bucketConfig.getUserId().equals(userId)) {
-            throw new StorageException("PERMISSION_DENIED", "No permission to access bucket");
+
+        // ✅ 通过 api_key_id 验证权限
+        // 验证逻辑：该 apiKey 是否属于当前用户
+        if (bucketConfig.getApiKeyId() != null) {
+            com.duda.user.dto.userapikey.UserApiKeyDTO apiKeyDTO = userApiKeyRpc.getUserApiKeyById(bucketConfig.getApiKeyId());
+
+            if (apiKeyDTO == null) {
+                log.error("【权限验证】API Key不存在！apiKeyId: {}", bucketConfig.getApiKeyId());
+                throw new StorageException("API_KEY_NOT_FOUND", "API Key not found: " + bucketConfig.getApiKeyId());
+            }
+
+            log.info("【权限验证】API Key信息 - apiKeyId: {}, apiKeyUserId: {}, 请求userId: {}",
+                    bucketConfig.getApiKeyId(), apiKeyDTO.getUserId(), userId);
+
+            // 验证 API Key 是否属于该用户
+            if (!apiKeyDTO.getUserId().equals(userId)) {
+                log.error("【权限验证】权限拒绝！API Key (id={}) 属于用户 {}，但请求来自用户 {}",
+                        bucketConfig.getApiKeyId(), apiKeyDTO.getUserId(), userId);
+                throw new StorageException("PERMISSION_DENIED", "No permission to access bucket");
+            }
+        } else {
+            // 如果没有 api_key_id，使用旧的验证方式（兼容性）
+            log.warn("【权限验证】Bucket没有配置apiKeyId，使用旧版权限验证");
+            if (!bucketConfig.getUserId().equals(userId)) {
+                log.error("【权限验证】权限拒绝！请求userId: {}, Bucket的userId: {}", userId, bucketConfig.getUserId());
+                throw new StorageException("PERMISSION_DENIED", "No permission to access bucket");
+            }
         }
+
+        log.info("【权限验证】权限验证通过");
         return bucketConfig;
+    }
+
+    /**
+     * 从 BucketConfig 构建ApiKeyConfigDTO（用于签名生成）
+     */
+    private ApiKeyConfigDTO getApiKeyConfigFromBucket(BucketConfig bucketConfig) {
+        try {
+            log.info("【API密钥配置】开始构建ApiKeyConfig，bucketName: {}, apiKeyId: {}",
+                    bucketConfig.getBucketName(), bucketConfig.getApiKeyId());
+
+            StorageType storageType = StorageType.fromCode(bucketConfig.getStorageType());
+
+            // 通过 api_key_id 查询 API Key
+            com.duda.user.dto.userapikey.UserApiKeyDTO apiKeyDTO =
+                userApiKeyRpc.getUserApiKeyById(bucketConfig.getApiKeyId());
+
+            if (apiKeyDTO == null) {
+                throw new StorageException("API_KEY_NOT_FOUND",
+                    "API密钥不存在，keyId: " + bucketConfig.getApiKeyId());
+            }
+
+            log.info("【API密钥配置】获取到API密钥: keyName={}, keyType={}, region={}",
+                    apiKeyDTO.getKeyName(), apiKeyDTO.getKeyType(), apiKeyDTO.getRegion());
+
+            // ✅ 使用明文 API Key（RPC 返回的已解密）
+            ApiKeyConfigDTO apiKeyConfig = ApiKeyConfigDTO.builder()
+                .storageType(storageType)
+                .accessKeyId(apiKeyDTO.getPlainAccessKeyId())      // ✅ 明文
+                .accessKeySecret(apiKeyDTO.getPlainAccessKeySecret()) // ✅ 明文
+                .endpoint(bucketConfig.getEndpoint())
+                .region(bucketConfig.getRegion())
+                .build();
+
+            log.info("【API密钥配置】ApiKeyConfig构建完成");
+            return apiKeyConfig;
+
+        } catch (Exception e) {
+            log.error("【API密钥配置】构建ApiKeyConfig失败", e);
+            throw new StorageException("API_KEY_CONFIG_FAILED",
+                "Failed to build API key config: " + e.getMessage());
+        }
     }
 
     /**
@@ -642,7 +735,7 @@ public class UploadServiceImpl implements UploadService {
             return getStorageAdapterFromConfig(bucketConfig);
         }
 
-        // 如果数据库中没有配置，使用默认配置
+        // 如果数据库中没有配置,使用默认配置
         log.warn("Bucket config not found in database, using default config: {}", bucketName);
 
         ApiKeyConfigDTO apiKeyConfig = ApiKeyConfigDTO.builder()
@@ -660,15 +753,82 @@ public class UploadServiceImpl implements UploadService {
      * 根据Bucket配置创建存储适配器
      */
     private StorageService getStorageAdapterFromConfig(BucketConfig bucketConfig) {
-        StorageType storageType = StorageType.valueOf(bucketConfig.getStorageType());
+        log.info("========================================");
+        log.info("【存储适配器】开始创建存储适配器");
+        log.info("【存储适配器】bucketName: {}", bucketConfig.getBucketName());
+        log.info("【存储适配器】apiKeyId: {}", bucketConfig.getApiKeyId());
 
+        StorageType storageType = StorageType.fromCode(bucketConfig.getStorageType());
+        log.info("【存储适配器】storageType: {}", storageType);
+
+        // 通过RPC调用获取API密钥信息（RPC已经解密，返回明文密钥）
+        log.info("【存储适配器】准备调用RPC获取API密钥，keyId={}", bucketConfig.getApiKeyId());
+        com.duda.user.dto.userapikey.UserApiKeyDTO apiKeyDTO = userApiKeyRpc.getUserApiKeyById(bucketConfig.getApiKeyId());
+
+        log.info("【存储适配器】RPC调用完成，apiKeyDTO是否为null: {}", apiKeyDTO == null);
+
+        if (apiKeyDTO == null) {
+            log.error("【存储适配器】❌ API密钥DTO为null，keyId={}", bucketConfig.getApiKeyId());
+            throw new StorageException("API_KEY_NOT_FOUND",
+                "API密钥不存在，keyId: " + bucketConfig.getApiKeyId());
+        }
+
+        // 打印日志检查是否解密成功
+        log.info("【API密钥调试】✅ apiKeyDTO不为null，开始检查字段值");
+        log.info("【API密钥调试】1. apiKeyDTO.getId(): {}", apiKeyDTO.getId());
+        log.info("【API密钥调试】2. apiKeyDTO.getKeyName(): {}", apiKeyDTO.getKeyName());
+
+        // 检查加密字段
+        log.info("【API密钥调试】3. getAccessKeyId()是否为null: {}", apiKeyDTO.getAccessKeyId() == null);
+        if (apiKeyDTO.getAccessKeyId() != null) {
+            log.info("【API密钥调试】   getAccessKeyId()长度: {}", apiKeyDTO.getAccessKeyId().length());
+            log.info("【API密钥调试】   getAccessKeyId()前20字符: {}",
+                apiKeyDTO.getAccessKeyId().substring(0, Math.min(20, apiKeyDTO.getAccessKeyId().length())));
+        }
+
+        log.info("【API密钥调试】4. getAccessKeySecret()是否为null: {}", apiKeyDTO.getAccessKeySecret() == null);
+        if (apiKeyDTO.getAccessKeySecret() != null) {
+            log.info("【API密钥调试】   getAccessKeySecret()长度: {}", apiKeyDTO.getAccessKeySecret().length());
+        }
+
+        // 检查明文字段（重点！）
+        log.info("【API密钥调试】5. getPlainAccessKeyId()是否为null: {}", apiKeyDTO.getPlainAccessKeyId() == null);
+        if (apiKeyDTO.getPlainAccessKeyId() != null) {
+            log.info("【API密钥调试】   getPlainAccessKeyId()长度: {}", apiKeyDTO.getPlainAccessKeyId().length());
+            log.info("【API密钥调试】   getPlainAccessKeyId()完整值: [{}]", apiKeyDTO.getPlainAccessKeyId());
+            log.info("【API密钥调试】   getPlainAccessKeyId()前8字符: [{}]",
+                apiKeyDTO.getPlainAccessKeyId().substring(0, Math.min(8, apiKeyDTO.getPlainAccessKeyId().length())));
+        } else {
+            log.error("【API密钥调试】❌ getPlainAccessKeyId()为null！！！");
+        }
+
+        log.info("【API密钥调试】6. getPlainAccessKeySecret()是否为null: {}", apiKeyDTO.getPlainAccessKeySecret() == null);
+        if (apiKeyDTO.getPlainAccessKeySecret() != null) {
+            log.info("【API密钥调试】   getPlainAccessKeySecret()长度: {}", apiKeyDTO.getPlainAccessKeySecret().length());
+            log.info("【API密钥调试】   getPlainAccessKeySecret()前8字符: [{}]",
+                apiKeyDTO.getPlainAccessKeySecret().substring(0, Math.min(8, apiKeyDTO.getPlainAccessKeySecret().length())));
+            log.info("【API密钥调试】   getPlainAccessKeySecret()后8字符: [{}]",
+                apiKeyDTO.getPlainAccessKeySecret().substring(Math.max(0, apiKeyDTO.getPlainAccessKeySecret().length() - 8)));
+        } else {
+            log.error("【API密钥调试】❌ getPlainAccessKeySecret()为null！！！");
+        }
+
+        // 使用RPC返回的明文密钥（已在user-provider中解密）
         ApiKeyConfigDTO apiKeyConfig = ApiKeyConfigDTO.builder()
             .storageType(storageType)
-            .accessKeyId(decryptApiKey(bucketConfig.getAccessKeyId()))
-            .accessKeySecret(decryptApiKey(bucketConfig.getAccessKeySecret()))
+            .accessKeyId(apiKeyDTO.getPlainAccessKeyId())
+            .accessKeySecret(apiKeyDTO.getPlainAccessKeySecret())
             .endpoint(bucketConfig.getEndpoint())
             .region(bucketConfig.getRegion())
             .build();
+
+        log.info("【存储适配器】apiKeyConfig构建完成");
+        log.info("【存储适配器】配置的AccessKeyId: {}", apiKeyConfig.getAccessKeyId());
+        log.info("【存储适配器】配置的AccessKeySecret长度: {}",
+            apiKeyConfig.getAccessKeySecret() != null ? apiKeyConfig.getAccessKeySecret().length() : "null");
+        log.info("【存储适配器】endpoint: {}", apiKeyConfig.getEndpoint());
+        log.info("【存储适配器】region: {}", apiKeyConfig.getRegion());
+        log.info("========================================");
 
         return storageAdapterFactory.createAdapter(storageType, apiKeyConfig);
     }
@@ -690,7 +850,7 @@ public class UploadServiceImpl implements UploadService {
     }
 
     /**
-     * 构建对象元数据（简单上传）
+     * 构建对象元数据(简单上传)
      */
     private ObjectMetadata buildObjectMetadata(SimpleUploadReqDTO request, UploadResultDTO result, BucketConfig bucketConfig) {
         return ObjectMetadata.builder()
@@ -713,9 +873,9 @@ public class UploadServiceImpl implements UploadService {
     }
 
     /**
-     * 构建对象元数据（字节数组上传）
+     * 构建对象元数据(字节数组上传)
      */
-    private ObjectMetadata buildObjectMetadataFromBytes(String bucketName, String objectKey, 
+    private ObjectMetadata buildObjectMetadataFromBytes(String bucketName, String objectKey,
                                                         byte[] data, ObjectMetadataDTO metadata, Long userId) {
         return ObjectMetadata.builder()
             .bucketName(bucketName)
@@ -732,9 +892,9 @@ public class UploadServiceImpl implements UploadService {
     }
 
     /**
-     * 构建对象元数据（分片上传）
+     * 构建对象元数据(分片上传)
      */
-    private ObjectMetadata buildObjectMetadataFromMultipart(CompleteMultipartUploadReqDTO request, 
+    private ObjectMetadata buildObjectMetadataFromMultipart(CompleteMultipartUploadReqDTO request,
                                                            UploadResultDTO result, Long userId) {
         return ObjectMetadata.builder()
             .bucketName(request.getBucketName())
@@ -755,7 +915,7 @@ public class UploadServiceImpl implements UploadService {
     /**
      * 保存上传记录
      */
-    private void saveUploadRecord(SimpleUploadReqDTO request, UploadResultDTO result, 
+    private void saveUploadRecord(SimpleUploadReqDTO request, UploadResultDTO result,
                                 String uploadStatus, String errorMessage, LocalDateTime startTime) {
         try {
             UploadRecord record = UploadRecord.builder()
@@ -763,8 +923,10 @@ public class UploadServiceImpl implements UploadService {
                 .objectKey(request.getObjectKey())
                 .userId(request.getUserId())
                 .userShard((int)(request.getUserId() % 100))
-                .fileSize(request.getMetadata().getContentLength())
-                .contentType(request.getMetadata().getContentType())
+                .fileSize(request.getContentLength() != null ? request.getContentLength() :
+                         (request.getMetadata() != null ? request.getMetadata().getContentLength() : 0))
+                .contentType(request.getContentType() != null ? request.getContentType() :
+                            (request.getMetadata() != null ? request.getMetadata().getContentType() : null))
                 .uploadMethod("simple")
                 .uploadStatus(uploadStatus)
                 .startTime(startTime)
@@ -813,18 +975,5 @@ public class UploadServiceImpl implements UploadService {
         } catch (Exception e) {
             log.error("Failed to save access log", e);
         }
-    }
-
-    /**
-     * 获取OSS POST签名
-     * <p>实现阿里云官方文档的POST签名方案</p>
-     *
-     * @param bucketName Bucket名称
-     * @return POST签名响应
-     */
-    @Override
-    public OssPostSignatureDTO getOssPostSignature(String bucketName) {
-        log.info("获取OSS POST签名，bucket: {}", bucketName);
-        return ossPostSignatureService.getOssPostSignature(bucketName);
     }
 }

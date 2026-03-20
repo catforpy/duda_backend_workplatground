@@ -5,6 +5,8 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * duda-file-provider 启动类
@@ -13,10 +15,12 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  * @author duda
  * @date 2025-03-13
  */
-@SpringBootApplication(scanBasePackages = "com.duda.file")
+@SpringBootApplication
 @EnableDiscoveryClient
-@EnableDubbo(scanBasePackages = "com.duda.file.provider.impl")
+@EnableDubbo(scanBasePackages = "com.duda.file.rpc")
 @MapperScan("com.duda.file.provider.mapper")
+@ComponentScan(basePackages = {"com.duda.file.provider", "com.duda.file.service", "com.duda.file.rpc", "com.duda.file.manager", "com.duda.file.common"})
+@EnableScheduling
 public class DudaFileProviderApplication {
 
     public static void main(String[] args) {

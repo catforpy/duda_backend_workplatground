@@ -42,13 +42,45 @@ dubbo:
   protocol:
     name: dubbo
     port: -1
-  registry:
-    address: nacos://${spring.cloud.nacos.server-addr}
+  registries:
+    # 默认注册中心 - 用于注册FILE服务
+    fileRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: DUDA_FILE_GROUP
+      default: true
+    # 订阅用户服务的注册中心
+    userRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: USER_GROUP
   scan:
-    base-packages: com.duda.file.provider
+    base-packages: com.duda.file.provider,com.duda.file.rpc
+  consumer:
+    # 消费者配置
+    check: false
   provider:
     timeout: 10000
     retries: 0
+  serialize:
+    security:
+      # 严格模式检查序列化类
+      # 允许java.sql.*和java.lang.*（默认已包含）
+      # 添加阿里云OSS相关类的白名单
+      allowlist:
+        - java.sql.*
+        - java.lang.*
+        - java.util.*
+        - com.duda.file.common.exception.*
+        - com.duda.file.common.exception.StorageException
+        - com.duda.file.common.exception.BucketNotFoundException
+        - com.duda.file.common.exception.ObjectNotFoundException
+        - com.duda.file.dto.bucket.*
+        - com.duda.file.dto.bucket.BucketStatisticsDTO
+        - com.duda.file.dto.upload.*
+        - com.aliyun.oss.*
 
 
 # OSS配置

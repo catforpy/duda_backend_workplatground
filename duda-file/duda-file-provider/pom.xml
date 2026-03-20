@@ -32,6 +32,13 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- User Interface (for UserApiKey RPC) -->
+        <dependency>
+            <groupId>com.duda</groupId>
+            <artifactId>duda-user-interface</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+
         <!-- Dubbo -->
         <dependency>
             <groupId>org.apache.dubbo</groupId>

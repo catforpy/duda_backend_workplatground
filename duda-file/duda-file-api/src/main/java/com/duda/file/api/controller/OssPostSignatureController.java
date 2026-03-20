@@ -1,7 +1,7 @@
 package com.duda.file.api.controller;
 
 import com.duda.file.dto.upload.OssPostSignatureDTO;
-import com.duda.file.service.UploadService;
+import com.duda.file.rpc.IUploadRpc;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,7 +29,7 @@ public class OssPostSignatureController {
             group = "DUDA_FILE_GROUP",
             check = false
     )
-    private UploadService uploadService;
+    private IUploadRpc uploadRpc;
 
     /**
      * 获取POST签名用于OSS表单直传
@@ -46,24 +46,22 @@ public class OssPostSignatureController {
      *   <li>host: OSS服务地址</li>
      * </ul>
      *
-     * @param bucketName Bucket名称（可选，默认使用配置的bucket）
+     * @param bucketName Bucket名称
+     * @param userId 用户ID（必填，用于权限验证）
      * @return POST签名响应
      */
     @GetMapping("/post-signature")
     @Operation(summary = "获取POST签名", description = "获取OSS表单直传所需的签名参数")
     public ResponseEntity<OssPostSignatureDTO> getPostSignature(
-            @Parameter(description = "Bucket名称，不传则使用默认配置")
-            @RequestParam(required = false) String bucketName) {
+            @Parameter(description = "Bucket名称", required = true)
+            @RequestParam String bucketName,
+            @Parameter(description = "用户ID（必填，用于权限验证）", required = true)
+            @RequestParam Long userId) {
         try {
-            log.info("开始获取OSS POST签名，bucket: {}", bucketName);
-
-            // 如果没有指定bucket，使用默认的bucket
-            if (bucketName == null || bucketName.isEmpty()) {
-                bucketName = "duda-java-backend-test"; // 默认bucket
-            }
+            log.info("开始获取OSS POST签名，bucket: {}, userId: {}", bucketName, userId);
 
             // 调用provider服务获取签名
-            OssPostSignatureDTO signature = uploadService.getOssPostSignature(bucketName);
+            OssPostSignatureDTO signature = uploadRpc.getOssPostSignature(bucketName, userId);
 
             log.info("OSS POST签名获取成功");
             return ResponseEntity.ok(signature);

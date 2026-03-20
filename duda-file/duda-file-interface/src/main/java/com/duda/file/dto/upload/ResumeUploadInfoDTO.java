@@ -1,13 +1,20 @@
 package com.duda.file.dto.upload;
 
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 import java.time.LocalDateTime;
+import java.io.Serializable;
 import java.util.List;
+import java.io.Serializable;
 import java.util.Map;
+import java.io.Serializable;
 
 /**
  * 断点续传信息DTO
@@ -19,7 +26,9 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ResumeUploadInfoDTO {
+public class ResumeUploadInfoDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 断点续传记录ID

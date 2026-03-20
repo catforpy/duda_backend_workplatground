@@ -10,6 +10,7 @@
         <result column="storage_type" property="storageType" jdbcType="VARCHAR"/>
         <result column="region" property="region" jdbcType="VARCHAR"/>
         <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="api_key_id" property="apiKeyId" jdbcType="BIGINT"/>
         <result column="user_type" property="userType" jdbcType="VARCHAR"/>
         <result column="tenant_id" property="tenantId" jdbcType="BIGINT"/>
         <result column="storage_class" property="storageClass" jdbcType="VARCHAR"/>
@@ -32,12 +33,7 @@
         <result column="current_file_count" property="currentFileCount" jdbcType="INTEGER"/>
         <result column="current_storage_size" property="currentStorageSize" jdbcType="BIGINT"/>
         <result column="storage_used_quota" property="storageUsedQuota" jdbcType="BIGINT"/>
-        <result column="access_key_id" property="accessKeyId" jdbcType="VARCHAR"/>
-        <result column="access_key_secret" property="accessKeySecret" jdbcType="VARCHAR"/>
-        <result column="secret_key" property="secretKey" jdbcType="VARCHAR"/>
         <result column="endpoint" property="endpoint" jdbcType="VARCHAR"/>
-        <result column="sts_role_arn" property="stsRoleArn" jdbcType="VARCHAR"/>
-        <result column="sts_external_id" property="stsExternalId" jdbcType="VARCHAR"/>
         <result column="status" property="status" jdbcType="VARCHAR"/>
         <result column="auto_renew_enabled" property="autoRenewEnabled" jdbcType="TINYINT"/>
         <result column="tags" property="tags" jdbcType="VARCHAR"/>
@@ -63,13 +59,12 @@
 
     <!-- 基础列 -->
     <sql id="Base_Column_List">
-        id, bucket_name, bucket_display_name, storage_type, region, user_id, user_type, tenant_id,
+        id, bucket_name, bucket_display_name, storage_type, region, user_id, user_type, tenant_id, api_key_id,
         storage_class, data_redundancy_type, acl_type, max_file_size, max_file_count, max_storage_size,
         allowed_file_types, blocked_file_types, domain_name, cdn_enabled, cdn_domain,
         versioning_enabled, cors_enabled, watermark_enabled, encryption_enabled, lifecycle_enabled,
         transfer_acceleration_enabled,
-        current_file_count, current_storage_size, storage_used_quota, access_key_id, access_key_secret,
-        secret_key, endpoint, sts_role_arn, sts_external_id, status, auto_renew_enabled, tags,
+        current_file_count, current_storage_size, storage_used_quota, endpoint, status, auto_renew_enabled, tags,
         category, description, created_by, created_time, updated_by, updated_time, deleted_time, is_deleted,
         lifecycle_config, cors_config, referer_config, bucket_policy, replication_config,
         access_monitor_config, inventory_config, website_config, logging_config, worm_config
@@ -94,6 +89,15 @@
         SELECT <include refid="Base_Column_List"/>
         FROM bucket_config
         WHERE user_id = #{userId}
+        AND is_deleted = 0
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据API密钥ID查询Bucket列表 -->
+    <select id="selectByApiKeyId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_config
+        WHERE api_key_id = #{apiKeyId}
         AND is_deleted = 0
         ORDER BY created_time DESC
     </select>
@@ -128,22 +132,20 @@
     <insert id="insert" parameterType="com.duda.file.provider.entity.BucketConfig"
             useGeneratedKeys="true" keyProperty="id">
         INSERT INTO bucket_config (
-            bucket_name, bucket_display_name, storage_type, region, user_id, user_type, tenant_id,
+            bucket_name, bucket_display_name, storage_type, region, user_id, api_key_id, user_type, tenant_id,
             storage_class, data_redundancy_type, acl_type, max_file_size, max_file_count, max_storage_size,
             allowed_file_types, blocked_file_types, domain_name, cdn_enabled, cdn_domain,
             versioning_enabled, cors_enabled, watermark_enabled, encryption_enabled, lifecycle_enabled,
-            current_file_count, current_storage_size, storage_used_quota, access_key_id, access_key_secret,
-            secret_key, endpoint, sts_role_arn, sts_external_id, status, auto_renew_enabled, tags,
+            current_file_count, current_storage_size, storage_used_quota, endpoint, status, auto_renew_enabled, tags,
             category, description, created_by, lifecycle_config, cors_config, referer_config,
             bucket_policy, replication_config, access_monitor_config, inventory_config,
             website_config, logging_config, worm_config
         ) VALUES (
-            #{bucketName}, #{bucketDisplayName}, #{storageType}, #{region}, #{userId}, #{userType}, #{tenantId},
+            #{bucketName}, #{bucketDisplayName}, #{storageType}, #{region}, #{userId}, #{apiKeyId}, #{userType}, #{tenantId},
             #{storageClass}, #{dataRedundancyType}, #{aclType}, #{maxFileSize}, #{maxFileCount}, #{maxStorageSize},
             #{allowedFileTypes}, #{blockedFileTypes}, #{domainName}, #{cdnEnabled}, #{cdnDomain},
             #{versioningEnabled}, #{corsEnabled}, #{watermarkEnabled}, #{encryptionEnabled}, #{lifecycleEnabled},
-            #{currentFileCount}, #{currentStorageSize}, #{storageUsedQuota}, #{accessKeyId}, #{accessKeySecret},
-            #{secretKey}, #{endpoint}, #{stsRoleArn}, #{stsExternalId}, #{status}, #{autoRenewEnabled}, #{tags},
+            #{currentFileCount}, #{currentStorageSize}, #{storageUsedQuota}, #{endpoint}, #{status}, #{autoRenewEnabled}, #{tags},
             #{category}, #{description}, #{createdBy}, #{lifecycleConfig}, #{corsConfig}, #{refererConfig},
             #{bucketPolicy}, #{replicationConfig}, #{accessMonitorConfig}, #{inventoryConfig},
             #{websiteConfig}, #{loggingConfig}, #{wormConfig}
@@ -164,9 +166,6 @@
             <if test="maxFileCount != null">max_file_count = #{maxFileCount},</if>
             <if test="maxStorageSize != null">max_storage_size = #{maxStorageSize},</if>
             <if test="updatedBy != null">updated_by = #{updatedBy},</if>
-            <if test="stsRoleArn != null">sts_role_arn = #{stsRoleArn},</if>
-            <if test="accessKeyId != null">access_key_id = #{accessKeyId},</if>
-            <if test="accessKeySecret != null">access_key_secret = #{accessKeySecret},</if>
             updated_time = NOW()
         </set>
         WHERE bucket_name = #{bucketName}

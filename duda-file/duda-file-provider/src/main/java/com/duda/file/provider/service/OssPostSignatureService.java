@@ -56,26 +56,32 @@ public class OssPostSignatureService {
      * @return POST签名响应
      */
     public OssPostSignatureDTO getOssPostSignature(String bucketName) {
+        throw new UnsupportedOperationException("请使用带 ApiKeyConfigDTO 参数的方法");
+    }
+
+    /**
+     * 获取OSS POST签名（使用指定的 API Key）
+     *
+     * @param bucketName Bucket名称
+     * @param apiKeyConfig API Key 配置（包含明文的 accessKeyId 和 accessKeySecret）
+     * @return POST签名响应
+     */
+    public OssPostSignatureDTO getOssPostSignature(String bucketName, com.duda.file.dto.bucket.ApiKeyConfigDTO apiKeyConfig) {
         try {
             log.info("开始生成OSS POST签名，bucket: {}, region: {}", bucketName, region);
 
-            // 步骤1：获取STS临时凭证（如果配置了Role ARN）
-            String securityToken = null;
-            String actualAccessKeyId = accessKeyId;
-            String actualAccessKeySecret = accessKeySecret;
+            // ✅ 使用传入的 API Key 配置
+            String actualAccessKeyId = apiKeyConfig.getAccessKeyId();
+            String actualAccessKeySecret = apiKeyConfig.getAccessKeySecret();
+            String actualRegion = apiKeyConfig.getRegion();
 
-            if (stsRoleArn != null && !stsRoleArn.isEmpty()) {
-                log.info("使用STS Role获取临时凭证: {}", stsRoleArn);
-                Map<String, String> credentials = getStsCredential();
-                actualAccessKeyId = credentials.get("accessKeyId");
-                actualAccessKeySecret = credentials.get("accessKeySecret");
-                securityToken = credentials.get("securityToken");
-                log.info("STS临时凭证获取成功");
-            } else {
-                log.info("使用AccessKey直接签名（未配置STS Role）");
+            if (actualRegion == null || actualRegion.isEmpty()) {
+                actualRegion = region; // 使用默认 region
             }
 
-            // 步骤2：生成签名所需的时间参数
+            log.info("使用 API Key 直接签名，accessKeyId: {}", actualAccessKeyId.substring(0, 8) + "****");
+
+            // 步骤1：生成签名所需的时间参数
             ZonedDateTime today = ZonedDateTime.now(ZoneOffset.UTC);
             DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd");
             String date = today.format(dateFormatter);
@@ -84,27 +90,27 @@ public class OssPostSignatureService {
             DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'");
             String xOssDate = now.format(dateTimeFormatter);
 
-            // 步骤3：构造凭证字符串
-            String xOssCredential = actualAccessKeyId + "/" + date + "/" + region + "/oss/aliyun_v4_request";
+            // 步骤2：构造凭证字符串
+            String xOssCredential = actualAccessKeyId + "/" + date + "/" + actualRegion + "/oss/aliyun_v4_request";
 
-            // 步骤4：生成host
-            String host = String.format("https://%s.oss-%s.aliyuncs.com", bucketName, region);
+            // 步骤3：生成host
+            String host = String.format("https://%s.oss-%s.aliyuncs.com", bucketName, actualRegion);
 
-            // 步骤5：构造Policy
-            String policy = buildPolicy(bucketName, actualAccessKeyId, xOssCredential, xOssDate, securityToken);
+            // 步骤4：构造Policy
+            String policy = buildPolicy(bucketName, actualAccessKeyId, xOssCredential, xOssDate, null);
             String base64Policy = Base64.getEncoder().encodeToString(policy.getBytes(StandardCharsets.UTF_8));
 
-            // 步骤6：计算签名
+            // 步骤5：计算签名
             String signature = calculateSignature(base64Policy, actualAccessKeySecret, date);
 
-            // 步骤7：组装响应
+            // 步骤6：组装响应
             return OssPostSignatureDTO.builder()
                     .version("OSS4-HMAC-SHA256")
                     .policy(base64Policy)
                     .xOssCredential(xOssCredential)
                     .xOssDate(xOssDate)
                     .signature(signature)
-                    .securityToken(securityToken)
+                    .securityToken(null)  // 不使用 STS
                     .dir(uploadDir)
                     .host(host)
                     .expireTime(expireTime)

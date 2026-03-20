@@ -14,7 +14,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  */
 @SpringBootApplication(scanBasePackages = "com.duda.file")
 @EnableDiscoveryClient
-@EnableDubbo
+@EnableDubbo(scanBasePackages = "com.duda.file.rpc")
 public class DudaFileApiApplication {
 
     public static void main(String[] args) {

@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.user.mapper.UserApiKeyMapper">
+
+    <!-- 结果映射：严格按照数据库字段 -->
+    <resultMap id="BaseResultMap" type="com.duda.user.entity.UserApiKey">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="key_name" property="keyName" jdbcType="VARCHAR"/>
+        <result column="key_type" property="keyType" jdbcType="VARCHAR"/>
+        <result column="access_key_id" property="accessKeyId" jdbcType="VARCHAR"/>
+        <result column="access_key_secret" property="accessKeySecret" jdbcType="VARCHAR"/>
+        <result column="sts_role_arn" property="stsRoleArn" jdbcType="VARCHAR"/>
+        <result column="sts_external_id" property="stsExternalId" jdbcType="VARCHAR"/>
+        <result column="region" property="region" jdbcType="VARCHAR"/>
+        <result column="is_default" property="isDefault" jdbcType="TINYINT"/>
+        <result column="is_active" property="isActive" jdbcType="TINYINT"/>
+        <result column="last_used_time" property="lastUsedTime" jdbcType="TIMESTAMP"/>
+        <result column="last_verified_time" property="lastVerifiedTime" jdbcType="TIMESTAMP"/>
+        <result column="verification_status" property="verificationStatus" jdbcType="VARCHAR"/>
+        <result column="description" property="description" jdbcType="VARCHAR"/>
+        <result column="created_by" property="createdBy" jdbcType="BIGINT"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_by" property="updatedBy" jdbcType="BIGINT"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+        <result column="deleted_time" property="deletedTime" jdbcType="TIMESTAMP"/>
+        <result column="is_deleted" property="isDeleted" jdbcType="TINYINT"/>
+    </resultMap>
+
+    <!-- 基础字段列表 -->
+    <sql id="Base_Column_List">
+        id, user_id, key_name, key_type, access_key_id, access_key_secret,
+        sts_role_arn, sts_external_id, region, is_default, is_active,
+        last_used_time, last_verified_time, verification_status, description,
+        created_by, created_time, updated_by, updated_time, deleted_time, is_deleted
+    </sql>
+
+    <!-- 查询条件：未删除 -->
+    <sql id="Not_Deleted_Condition">
+        AND is_deleted = 0
+    </sql>
+
+    <!-- 根据用户ID查询所有API密钥 -->
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM user_api_keys
+        WHERE user_id = #{userId}
+        <include refid="Not_Deleted_Condition"/>
+        ORDER BY is_default DESC, created_time DESC
+    </select>
+
+    <!-- 根据用户ID查询默认API密钥 -->
+    <select id="selectDefaultByUserId" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM user_api_keys
+        WHERE user_id = #{userId}
+        AND is_default = 1
+        <include refid="Not_Deleted_Condition"/>
+        LIMIT 1
+    </select>
+
+    <!-- 根据用户ID和密钥名称查询 -->
+    <select id="selectByUserIdAndKeyName" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM user_api_keys
+        WHERE user_id = #{userId}
+        AND key_name = #{keyName}
+        <include refid="Not_Deleted_Condition"/>
+        LIMIT 1
+    </select>
+
+    <!-- 软删除API密钥 -->
+    <update id="softDeleteById">
+        UPDATE user_api_keys
+        SET is_deleted = 1,
+            deleted_time = #{deletedTime},
+            updated_time = #{deletedTime}
+        WHERE id = #{id}
+        AND user_id = #{userId}
+        AND is_deleted = 0
+    </update>
+
+    <!-- 设置默认密钥 -->
+    <update id="setDefaultKey">
+        <!-- 先取消用户的所有默认密钥 -->
+        UPDATE user_api_keys
+        SET is_default = 0,
+            updated_time = NOW()
+        WHERE user_id = #{userId}
+        AND is_default = 1
+        <include refid="Not_Deleted_Condition"/>
+
+        <!-- 再设置新的默认密钥 -->
+        UPDATE user_api_keys
+        SET is_default = 1,
+            updated_time = NOW()
+        WHERE id = #{keyId}
+        AND user_id = #{userId}
+        <include refid="Not_Deleted_Condition"/>
+    </update>
+
+    <!-- 取消用户的所有默认密钥 -->
+    <update id="clearDefaultKeys">
+        UPDATE user_api_keys
+        SET is_default = 0,
+            updated_time = NOW()
+        WHERE user_id = #{userId}
+        AND is_default = 1
+        <include refid="Not_Deleted_Condition"/>
+    </update>
+
+    <!-- 更新最后使用时间 -->
+    <update id="updateLastUsedTime">
+        UPDATE user_api_keys
+        SET last_used_time = #{lastUsedTime},
+            updated_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新验证状态 -->
+    <update id="updateVerificationStatus">
+        UPDATE user_api_keys
+        SET verification_status = #{verificationStatus},
+            last_verified_time = #{lastVerifiedTime},
+            updated_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+</mapper>

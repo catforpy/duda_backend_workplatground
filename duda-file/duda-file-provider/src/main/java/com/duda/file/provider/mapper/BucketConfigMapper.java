@@ -31,6 +31,11 @@ public interface BucketConfigMapper {
     List<BucketConfig> selectByUserId(@Param("userId") Long userId);
 
     /**
+     * 根据API密钥ID查询Bucket列表
+     */
+    List<BucketConfig> selectByApiKeyId(@Param("apiKeyId") Long apiKeyId);
+
+    /**
      * 根据用户ID和分片编号查询Bucket列表
      */
     List<BucketConfig> selectByUserIdAndShard(@Param("userId") Long userId, @Param("userShard") Integer userShard);
@@ -69,4 +74,9 @@ public interface BucketConfigMapper {
      * 查询所有Bucket
      */
     List<BucketConfig> selectAll();
+
+    /**
+     * 查询所有激活的Bucket
+     */
+    List<BucketConfig> selectActiveBuckets();
 }

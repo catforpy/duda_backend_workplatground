@@ -1,11 +1,16 @@
 package com.duda.file.dto.object;
 
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 import java.time.LocalDateTime;
+import java.io.Serializable;
 
 /**
  * 对象恢复状态DTO
@@ -17,7 +22,9 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class RestoreStatusDTO {
+public class RestoreStatusDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 存储空间名称

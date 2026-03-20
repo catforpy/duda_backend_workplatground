@@ -3,8 +3,10 @@ package com.duda.file.dto.bucket;
 import com.duda.file.enums.AclType;
 import com.duda.file.enums.DataRedundancyType;
 import com.duda.file.enums.StorageClass;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 创建Bucket请求DTO
@@ -14,7 +16,9 @@ import lombok.Data;
  */
 @Data
 @Builder
-public class CreateBucketReqDTO {
+@NoArgsConstructor
+@AllArgsConstructor
+public class CreateBucketReqDTO implements java.io.Serializable {
 
     /**
      * Bucket名称（可选，不填则自动生成）
@@ -95,4 +99,9 @@ public class CreateBucketReqDTO {
      * Bucket描述（可选）
      */
     private String description;
+
+    /**
+     * API密钥名称（用于选择使用哪个密钥创建Bucket）
+     */
+    private String keyName;
 }

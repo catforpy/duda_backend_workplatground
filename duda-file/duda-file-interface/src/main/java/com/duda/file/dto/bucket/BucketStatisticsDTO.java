@@ -11,7 +11,7 @@ import lombok.Data;
  */
 @Data
 @Builder
-public class BucketStatisticsDTO {
+public class BucketStatisticsDTO implements java.io.Serializable {
 
     /**
      * Bucket名称

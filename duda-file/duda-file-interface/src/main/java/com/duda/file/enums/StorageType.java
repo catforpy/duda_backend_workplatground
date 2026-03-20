@@ -11,7 +11,7 @@ public enum StorageType {
     /**
      * 阿里云OSS
      */
-    ALIYUN_OSS("aliyun-oss", "阿里云OSS"),
+    ALIYUN_OSS("OSS", "阿里云OSS"),
 
     /**
      * 腾讯云COS

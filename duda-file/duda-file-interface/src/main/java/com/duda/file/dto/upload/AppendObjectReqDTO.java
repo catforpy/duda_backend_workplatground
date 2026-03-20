@@ -1,13 +1,20 @@
 package com.duda.file.dto.upload;
 
 import com.duda.file.dto.object.ObjectMetadataDTO;
+import java.io.Serializable;
 import lombok.AllArgsConstructor;
+import java.io.Serializable;
 import lombok.Builder;
+import java.io.Serializable;
 import lombok.Data;
+import java.io.Serializable;
 import lombok.NoArgsConstructor;
+import java.io.Serializable;
 
 import java.io.InputStream;
+import java.io.Serializable;
 import java.util.Map;
+import java.io.Serializable;
 
 /**
  * 追加对象请求DTO
@@ -19,7 +26,9 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AppendObjectReqDTO {
+public class AppendObjectReqDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 存储空间名称

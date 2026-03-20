@@ -153,6 +153,26 @@
                 </executions>
             </plugin>
 
+            <!-- 🔥 解压依赖到target/dependency目录 - 用于Docker挂载本地class文件 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- 复制JAR到项目根目录（便于Docker构建） -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

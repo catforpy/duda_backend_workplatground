@@ -54,6 +54,11 @@ public class BucketConfig implements Serializable {
     private Long userId;
 
     /**
+     * 关联的API密钥ID (关联 user_api_keys.id)
+     */
+    private Long apiKeyId;
+
+    /**
      * 用户类型：platform-admin/service_provider/platform_account
      */
     private String userType;

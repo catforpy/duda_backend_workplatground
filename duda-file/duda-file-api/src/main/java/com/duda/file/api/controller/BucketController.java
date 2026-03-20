@@ -2,13 +2,12 @@ package com.duda.file.api.controller;
 
 import com.duda.common.domain.Result;
 import com.duda.file.dto.bucket.*;
-import com.duda.file.service.BucketService;
+import com.duda.file.api.service.BucketService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
-import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -34,11 +33,7 @@ import java.util.Map;
 @CrossOrigin(originPatterns = "*", maxAge = 3600)
 public class BucketController {
 
-    @DubboReference(
-        version = "1.0.0",
-        group = "DUDA_FILE_GROUP",
-        check = false
-    )
+    @Resource
     private BucketService bucketService;
 
     // ==================== 基础操作 ====================
@@ -123,21 +118,46 @@ public class BucketController {
     /**
      * 列出用户的存储空间
      *
-     * 查询指定用户的所有 Bucket 列表。
+     * 查询指定用户在指定API密钥下的 Bucket 列表。
+     *
+     * 业务说明：
+     * - 一个用户可以有多个API密钥
+     * - 每个API密钥下可以有多个Bucket
+     * - 通过 keyName 指定查询哪个API密钥下的Bucket
      *
      * @param userId 用户 ID
+     * @param keyName API密钥名称 (必填)
      * @param includeDeleted 是否包含已删除的 Bucket
      * @return Bucket 列表
      */
-    @Operation(summary = "列出存储空间", description = "查询用户的所有 Bucket")
+    @Operation(summary = "列出存储空间", description = "查询用户在指定API密钥下的 Bucket")
     @GetMapping("/list")
     public Result listBuckets(
         @Parameter(description = "用户ID", required = true)
         @RequestParam Long userId,
+        @Parameter(description = "API密钥名称", required = true)
+        @RequestParam String keyName,
         @Parameter(description = "是否包含已删除的Bucket")
         @RequestParam(defaultValue = "false") Boolean includeDeleted) {
 
-        List<BucketDTO> buckets = bucketService.listBuckets(userId);
+        List<BucketDTO> buckets = bucketService.listBuckets(userId, keyName);
+
+        return Result.success(buckets);
+    }
+
+    /**
+     * 列出OSS账号下所有真实的存储空间
+     *
+     * 直接调用阿里云OSS SDK，查询当前账号所有地域下的Bucket。
+     * 这是管理员功能，用于查看阿里云OSS中的所有真实Bucket。
+     *
+     * @return 所有OSS Bucket列表
+     */
+    @Operation(summary = "列出所有OSS Bucket", description = "查询当前账号下的所有Bucket（管理员）")
+    @GetMapping("/list-all-oss")
+    public Result listAllOssBuckets() {
+
+        List<BucketDTO> buckets = bucketService.listAllOssBuckets();
 
         return Result.success(buckets);
     }
@@ -341,35 +361,8 @@ public class BucketController {
         @Parameter(description = "Bucket名称", required = true)
         @PathVariable String bucketName) {
 
-        BucketStatisticsDTO statistics = bucketService.getBucketStatistics(bucketName);
-
-        Map<String, Object> capacity = new HashMap<>();
-        capacity.put("bucketName", bucketName);
-        capacity.put("storageUsed", statistics.getStorageUsed());
-        capacity.put("fileCount", statistics.getFileCount());
-        capacity.put("storageQuota", statistics.getStorageQuota());
-        capacity.put("maxFileCount", null); // DTO 中没有此字段
-        capacity.put("storageUsedPercent", statistics.getUsagePercentage());
-        capacity.put("fileCountUsedPercent", null); // DTO 中没有此字段
+        Map<String, Object> capacity = bucketService.getBucketCapacity(bucketName);
 
         return Result.success(capacity);
-    }
-
-    // ==================== 私有辅助方法 ====================
-
-    /**
-     * 计算存储容量使用百分比
-     */
-    private Double calculateStorageUsedPercent(BucketStatisticsDTO statistics) {
-        // DTO 中已经有 usagePercentage 字段，直接使用
-        return statistics.getUsagePercentage() != null ? statistics.getUsagePercentage() : 0.0;
-    }
-
-    /**
-     * 计算文件数量使用百分比
-     */
-    private Double calculateFileCountUsedPercent(BucketStatisticsDTO statistics) {
-        // DTO 中没有此字段，返回 null
-        return null;
     }
 }
