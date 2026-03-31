@@ -3,6 +3,14 @@ package com.duda.tenant.service.impl;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.duda.common.mq.MqTopicConstants;
+import com.duda.common.mq.message.OrderCancelledMsg;
+import com.duda.common.mq.message.OrderCreatedMsg;
+import com.duda.common.mq.message.OrderPaidMsg;
+import com.duda.common.redis.RedisUtils;
+import com.duda.common.redis.idempotent.IdempotentHelper;
+import com.duda.common.redis.lock.RedisDistributedLock;
+import com.duda.common.rocketmq.RocketMQUtils;
 import com.duda.common.web.exception.BizException;
 import com.duda.tenant.api.dto.SupplyDistributionDTO;
 import com.duda.tenant.api.dto.SupplyOrderDTO;
@@ -15,6 +23,7 @@ import com.duda.tenant.service.SupplyDistributionService;
 import com.duda.tenant.service.SupplyOrderService;
 import com.duda.tenant.service.SupplyProductService;
 import com.duda.tenant.service.TenantUserRelationService;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +58,18 @@ public class SupplyOrderServiceImpl
 
     @Autowired
     private TenantUserRelationService tenantUserRelationService;
+
+    @Resource
+    private RedisUtils redisUtils;
+
+    @Resource
+    private IdempotentHelper idempotentHelper;
+
+    @Resource
+    private RedisDistributedLock redisDistributedLock;
+
+    @Resource
+    private RocketMQUtils rocketMQUtils;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -180,7 +201,29 @@ public class SupplyOrderServiceImpl
         log.info("创建供应链订单成功: orderId={}, orderNo={}, totalAmount={}",
             order.getId(), dto.getDistributorOrderNo(), order.getTotalAmount());
 
-        // TODO: 发送订单创建消息到MQ
+        // 12. 发送订单创建消息到MQ（异步处理）
+        try {
+            OrderCreatedMsg createdMsg = new OrderCreatedMsg();
+            createdMsg.setOrderId(order.getId());
+            createdMsg.setOrderNo(order.getDistributorOrderNo());
+            createdMsg.setTenantId(order.getDistributorTenantId());
+            createdMsg.setUserId(order.getCustomerUserId());
+            createdMsg.setTotalAmount(order.getTotalAmount());
+            createdMsg.setCreateTime(LocalDateTime.now().toString());
+            createdMsg.setOrderType("supply_order");
+            createdMsg.setTimeoutMinutes(30); // 30分钟超时
+
+            rocketMQUtils.asyncSendWithKey(
+                MqTopicConstants.ORDER_CREATE,
+                createdMsg,
+                RocketMQUtils.buildMessageKey("order-create", order.getId())
+            );
+
+            log.info("✅ 订单创建MQ消息发送成功: orderId={}", order.getId());
+        } catch (Exception e) {
+            log.error("❌ 发送订单创建MQ消息失败: orderId={}", order.getId(), e);
+            // 不影响订单创建流程
+        }
 
         return order;
     }
@@ -256,13 +299,39 @@ public class SupplyOrderServiceImpl
         }
 
         // 更新订单状态
+        String oldStatus = order.getOrderStatus();
         order.setOrderStatus(orderStatus);
         order.setUpdatedAt(LocalDateTime.now());
         updateById(order);
 
-        log.info("更新订单状态成功: orderId={}, newStatus={}", id, orderStatus);
+        log.info("更新订单状态成功: orderId={}, oldStatus={}, newStatus={}",
+            id, oldStatus, orderStatus);
 
-        // TODO: 发送订单状态变更消息
+        // 如果订单被取消，发送取消消息
+        if ("refunded".equals(orderStatus) || "cancelled".equals(orderStatus)) {
+            try {
+                OrderCancelledMsg cancelledMsg = new OrderCancelledMsg();
+                cancelledMsg.setOrderId(order.getId());
+                cancelledMsg.setOrderNo(order.getDistributorOrderNo());
+                cancelledMsg.setTenantId(order.getDistributorTenantId());
+                cancelledMsg.setUserId(order.getCustomerUserId());
+                cancelledMsg.setReason("订单取消");
+                cancelledMsg.setCancelTime(LocalDateTime.now().toString());
+                cancelledMsg.setOrderType("supply_order");
+                cancelledMsg.setNeedRefund("paid".equals(oldStatus));
+
+                rocketMQUtils.asyncSendWithKey(
+                    MqTopicConstants.ORDER_CANCEL,
+                    cancelledMsg,
+                    RocketMQUtils.buildMessageKey("order-cancel", order.getId())
+                );
+
+                log.info("✅ 订单取消MQ消息发送成功: orderId={}", order.getId());
+            } catch (Exception e) {
+                log.error("❌ 发送订单取消MQ消息失败: orderId={}", order.getId(), e);
+                // 不影响取消流程
+            }
+        }
 
         return true;
     }
@@ -284,34 +353,85 @@ public class SupplyOrderServiceImpl
             throw new BizException(400, "支付单号不能为空");
         }
 
-        // 查询订单
-        SupplyOrder order = getById(id);
-        if (order == null) {
-            log.warn("订单不存在: orderId={}", id);
-            throw new BizException(10001, "订单不存在");
+        // 幂等性检查：防止重复支付
+        String idempotentKey = "pay:supply:" + id + ":" + paymentNo;
+        if (!idempotentHelper.checkAndSet(idempotentKey, 300)) {
+            log.warn("支付请求重复，已处理: orderId={}, paymentNo={}", id, paymentNo);
+            throw new BizException(409, "请勿重复支付");
         }
 
-        // 检查订单状态
-        if (!"pending".equals(order.getOrderStatus())) {
-            log.warn("订单状态不允许支付: orderId={}, orderStatus={}", id, order.getOrderStatus());
-            throw new BizException(10005, "订单状态不允许支付");
+        // 分布式锁：防止并发支付
+        String lockKey = "pay:lock:supply:" + id;
+        String lockValue = String.valueOf(System.currentTimeMillis());
+        boolean locked = false;
+        try {
+            locked = redisDistributedLock.tryLock(lockKey, lockValue, 30);
+            if (!locked) {
+                log.warn("获取支付锁失败，请稍后重试: orderId={}", id);
+                throw new BizException(429, "支付处理中，请稍后重试");
+            }
+
+            // 查询订单
+            SupplyOrder order = getById(id);
+            if (order == null) {
+                log.warn("订单不存在: orderId={}", id);
+                throw new BizException(10001, "订单不存在");
+            }
+
+            // 检查订单状态（双重检查）
+            if (!"pending".equals(order.getOrderStatus())) {
+                if ("paid".equals(order.getOrderStatus())) {
+                    log.warn("订单已支付，请勿重复支付: orderId={}, orderStatus={}", id, order.getOrderStatus());
+                    throw new BizException(10005, "订单已支付");
+                }
+                log.warn("订单状态不允许支付: orderId={}, orderStatus={}", id, order.getOrderStatus());
+                throw new BizException(10005, "订单状态不允许支付");
+            }
+
+            // TODO: 验证支付金额是否匹配
+            // TODO: 调用第三方支付平台验证支付状态
+
+            // 更新订单状态为已支付
+            order.setOrderStatus("paid");
+            order.setUpdatedAt(LocalDateTime.now());
+            updateById(order);
+
+            log.info("订单支付成功: orderId={}, orderNo={}, paymentNo={}",
+                id, order.getDistributorOrderNo(), paymentNo);
+
+            // 发送支付成功消息到MQ（异步处理后续业务）
+            try {
+                OrderPaidMsg paidMsg = new OrderPaidMsg();
+                paidMsg.setOrderId(order.getId());
+                paidMsg.setOrderNo(order.getDistributorOrderNo());
+                paidMsg.setTenantId(order.getDistributorTenantId());
+                paidMsg.setUserId(order.getCustomerUserId());
+                paidMsg.setTotalAmount(order.getTotalAmount());
+                paidMsg.setPaymentMethod(paymentMethod);
+                paidMsg.setPaymentNo(paymentNo);
+                paidMsg.setPaymentTime(LocalDateTime.now().toString());
+                paidMsg.setOrderType("supply_order");
+
+                rocketMQUtils.asyncSendWithKey(
+                    MqTopicConstants.ORDER_PAID,
+                    paidMsg,
+                    RocketMQUtils.buildMessageKey("order-paid", order.getId())
+                );
+
+                log.info("✅ 订单支付成功MQ消息发送成功: orderId={}", order.getId());
+            } catch (Exception e) {
+                log.error("❌ 发送订单支付MQ消息失败: orderId={}", order.getId(), e);
+                // 不影响支付流程
+            }
+
+            return true;
+
+        } finally {
+            // 释放锁
+            if (locked) {
+                redisDistributedLock.unlock(lockKey, lockValue);
+            }
         }
-
-        // TODO: 验证支付金额是否匹配
-        // TODO: 调用第三方支付平台验证支付状态
-
-        // 更新订单状态为已支付
-        order.setOrderStatus("paid");
-        order.setUpdatedAt(LocalDateTime.now());
-        updateById(order);
-
-        log.info("订单支付成功: orderId={}, paymentNo={}", id, paymentNo);
-
-        // TODO: 发送支付成功消息
-        // TODO: 触发库存扣减
-        // TODO: 通知供应商发货
-
-        return true;
     }
 
     @Override
