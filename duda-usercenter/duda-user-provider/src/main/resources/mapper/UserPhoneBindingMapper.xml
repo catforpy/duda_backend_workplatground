@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.user.mapper.UserPhoneBindingMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.user.entity.UserPhoneBinding">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="user_id" property="userId" jdbcType="BIGINT"/>
+        <result column="user_shard" property="userShard" jdbcType="TINYINT"/>
+        <result column="phone" property="phone" jdbcType="VARCHAR"/>
+        <result column="bind_type" property="bindType" jdbcType="VARCHAR"/>
+        <result column="bind_time" property="bindTime" jdbcType="TIMESTAMP"/>
+        <result column="verify_code" property="verifyCode" jdbcType="VARCHAR"/>
+        <result column="verify_ip" property="verifyIp" jdbcType="VARCHAR"/>
+        <result column="is_active" property="isActive" jdbcType="TINYINT"/>
+        <result column="replace_time" property="replaceTime" jdbcType="TIMESTAMP"/>
+        <result column="replace_reason" property="replaceReason" jdbcType="VARCHAR"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <!-- 基础字段 -->
+    <sql id="Base_Column_List">
+        id, user_id, user_shard, phone, bind_type, bind_time, verify_code, verify_ip,
+        is_active, replace_time, replace_reason, create_time, update_time
+    </sql>
+
+    <!-- 查找用户的激活手机号绑定 -->
+    <select id="findActiveByUserId" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM user_phone_bindings
+        WHERE user_id = #{userId}
+          AND is_active = 1
+        LIMIT 1
+    </select>
+
+    <!-- 根据手机号查找绑定记录 -->
+    <select id="findByPhone" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM user_phone_bindings
+        WHERE phone = #{phone}
+        ORDER BY is_active DESC, create_time DESC
+        LIMIT 1
+    </select>
+
+    <!-- 检查手机号是否已被绑定（包括历史记录） -->
+    <select id="countByPhone" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM user_phone_bindings
+        WHERE phone = #{phone}
+    </select>
+
+    <!-- 检查激活的手机号是否已被绑定 -->
+    <select id="countActiveByPhone" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM user_phone_bindings
+        WHERE phone = #{phone}
+          AND is_active = 1
+    </select>
+
+    <!-- 更换手机号 -->
+    <update id="replacePhone">
+        -- 1. 将旧手机号设为已更换
+        UPDATE user_phone_bindings
+        SET is_active = 0,
+            replace_time = NOW(),
+            replace_reason = #{replaceReason},
+            update_time = NOW()
+        WHERE user_id = #{userId}
+          AND phone = #{oldPhone}
+          AND is_active = 1;
+
+        -- 2. 如果新手机号不存在绑定记录，则创建新记录
+        INSERT IGNORE INTO user_phone_bindings (
+            user_id, user_shard, phone, bind_type, bind_time,
+            verify_code, verify_ip, is_active, create_time, update_time
+        ) VALUES (
+            #{userId}, #{userShard}, #{newPhone}, 'sms_login', NOW(),
+            #{verifyCode}, #{verifyIp}, 1, NOW(), NOW()
+        );
+
+        -- 3. 确保新手机号为激活状态（如果记录已存在但未激活）
+        UPDATE user_phone_bindings
+        SET is_active = 1,
+            verify_code = #{verifyCode},
+            verify_ip = #{verifyIp},
+            update_time = NOW()
+        WHERE user_id = #{userId}
+          AND phone = #{newPhone}
+    </update>
+
+    <!-- 将用户的所有手机号设为非激活（排除指定的手机号） -->
+    <update id="deactivateOtherPhones">
+        UPDATE user_phone_bindings
+        SET is_active = 0,
+            update_time = NOW()
+        WHERE user_id = #{userId}
+          AND phone != #{excludePhone}
+          AND is_active = 1
+    </update>
+
+</mapper>

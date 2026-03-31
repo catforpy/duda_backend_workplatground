@@ -31,6 +31,12 @@ public class UserApiKeyDTO implements Serializable {
     private Long id;
 
     /**
+     * 租户ID
+     */
+    @Schema(description = "租户ID")
+    private Long tenantId;
+
+    /**
      * 用户ID
      */
     @Schema(description = "用户ID")

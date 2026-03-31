@@ -21,27 +21,27 @@ public interface UserApiKeyService {
     /**
      * 获取用户的所有API密钥
      */
-    List<UserApiKeyDTO> listUserApiKeys(Long userId, Boolean includeInactive);
+    List<UserApiKeyDTO> listUserApiKeys(Long tenantId, Long userId, Boolean includeInactive);
 
     /**
      * 获取用户的默认API密钥
      */
-    UserApiKeyDTO getDefaultUserApiKey(Long userId);
+    UserApiKeyDTO getDefaultUserApiKey(Long tenantId, Long userId);
 
     /**
      * 删除用户API密钥
      */
-    Boolean deleteUserApiKey(Long keyId, Long userId);
+    Boolean deleteUserApiKey(Long tenantId, Long keyId, Long userId);
 
     /**
      * 设置默认密钥
      */
-    Boolean setDefaultApiKey(Long keyId, Long userId);
+    Boolean setDefaultApiKey(Long tenantId, Long keyId, Long userId);
 
     /**
      * 更新密钥状态
      */
-    Boolean updateApiKeyStatus(Long keyId, Long userId, Boolean active);
+    Boolean updateApiKeyStatus(Long tenantId, Long keyId, Long userId, Boolean active);
 
     /**
      * 根据用户名添加API密钥（测试方法）

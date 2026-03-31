@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: duda-tenant-provider
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 120.26.170.213:8848
+        namespace: duda-dev
+        group: DUDA_TENANT_GROUP
+        username: nacos
+        password: nacos
+        metadata:
+          version: 1.0.0
+          dubbo.version: 3.3.2
+          preserved.register.source: SPRING_CLOUD
+      config:
+        server-addr: 120.26.170.213:8848
+        namespace: duda-dev
+        group: DUDA_TENANT_GROUP
+        username: nacos
+        password: nacos
+        file-extension: yml
+        refresh-enabled: true
+
+dubbo:
+  application:
+    name: ${spring.application.name}
+    version: 1.0.0
+    qos-enable: false
+  protocol:
+    name: dubbo
+    port: 20885
+    threads: 200
+  registry:
+    address: nacos://120.26.170.213:8848
+    parameters:
+      namespace: duda-dev
+      group: DUDA_TENANT_GROUP
+    username: nacos
+    password: nacos
+  scan:
+    base-packages: com.duda.tenant.rpc
+  provider:
+    timeout: 5000
+    retries: 2
+    loadbalance: roundrobin
+
+server:
+  port: 8088
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.duda.tenant: INFO
+    com.duda.tenant.mapper: DEBUG
+    com.alibaba.nacos: INFO

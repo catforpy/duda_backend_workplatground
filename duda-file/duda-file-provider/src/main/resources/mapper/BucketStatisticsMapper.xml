@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.BucketStatisticsMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.BucketStatistics">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="region" property="region" jdbcType="VARCHAR"/>
+        <result column="storage_type" property="storageType" jdbcType="VARCHAR"/>
+        <result column="total_file_count" property="totalFileCount" jdbcType="INTEGER"/>
+        <result column="total_storage_size" property="totalStorageSize" jdbcType="BIGINT"/>
+        <result column="image_count" property="imageCount" jdbcType="INTEGER"/>
+        <result column="video_count" property="videoCount" jdbcType="INTEGER"/>
+        <result column="document_count" property="documentCount" jdbcType="INTEGER"/>
+        <result column="other_count" property="otherCount" jdbcType="INTEGER"/>
+        <result column="total_traffic_bytes" property="totalTrafficBytes" jdbcType="BIGINT"/>
+        <result column="upload_traffic_bytes" property="uploadTrafficBytes" jdbcType="BIGINT"/>
+        <result column="download_traffic_bytes" property="downloadTrafficBytes" jdbcType="BIGINT"/>
+        <result column="storage_fee" property="storageFee" jdbcType="DECIMAL"/>
+        <result column="traffic_fee" property="trafficFee" jdbcType="DECIMAL"/>
+        <result column="request_fee" property="requestFee" jdbcType="DECIMAL"/>
+        <result column="total_fee" property="totalFee" jdbcType="DECIMAL"/>
+        <result column="last_sync_time" property="lastSyncTime" jdbcType="TIMESTAMP"/>
+        <result column="last_upload_time" property="lastUploadTime" jdbcType="TIMESTAMP"/>
+        <result column="last_download_time" property="lastDownloadTime" jdbcType="TIMESTAMP"/>
+        <result column="last_delete_time" property="lastDeleteTime" jdbcType="TIMESTAMP"/>
+        <result column="tags" property="tags" jdbcType="VARCHAR"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+        <result column="tenant_id" property="tenantId" jdbcType="BIGINT"/>
+    </resultMap>
+
+    <!-- 基础字段列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, region, storage_type,
+        total_file_count, total_storage_size, image_count, video_count, document_count, other_count,
+        total_traffic_bytes, upload_traffic_bytes, download_traffic_bytes,
+        storage_fee, traffic_fee, request_fee, total_fee,
+        last_sync_time, last_upload_time, last_download_time, last_delete_time,
+        tags, status, created_time, updated_time, tenant_id
+    </sql>
+
+    <!-- 根据Bucket名称查询 -->
+    <select id="selectByBucketName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_statistics
+        WHERE bucket_name = #{bucketName}
+    </select>
+
+    <!-- 根据租户ID查询统计列表 -->
+    <select id="selectByTenantId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_statistics
+        WHERE tenant_id = #{tenantId}
+        ORDER BY updated_time DESC
+    </select>
+
+    <!-- 根据状态查询统计列表 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_statistics
+        WHERE status = #{status}
+        ORDER BY updated_time DESC
+    </select>
+
+    <!-- 根据地域查询统计列表 -->
+    <select id="selectByRegion" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_statistics
+        WHERE region = #{region}
+        ORDER BY updated_time DESC
+    </select>
+
+    <!-- 根据存储类型查询统计列表 -->
+    <select id="selectByStorageType" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_statistics
+        WHERE storage_type = #{storageType}
+        ORDER BY updated_time DESC
+    </select>
+
+    <!-- 查询最后更新时间早于指定时间的统计 -->
+    <select id="selectByLastSyncTimeBefore" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_statistics
+        WHERE last_sync_time &lt; #{lastSyncTime}
+        ORDER BY last_sync_time ASC
+    </select>
+
+    <!-- 更新统计信息 -->
+    <update id="updateStatistics">
+        UPDATE bucket_statistics
+        SET total_file_count = #{totalFileCount},
+            total_storage_size = #{totalStorageSize},
+            image_count = #{imageCount},
+            video_count = #{videoCount},
+            document_count = #{documentCount},
+            other_count = #{otherCount},
+            total_traffic_bytes = #{totalTrafficBytes},
+            upload_traffic_bytes = #{uploadTrafficBytes},
+            download_traffic_bytes = #{downloadTrafficBytes},
+            storage_fee = #{storageFee},
+            traffic_fee = #{trafficFee},
+            request_fee = #{requestFee},
+            total_fee = #{totalFee},
+            updated_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新同步时间 -->
+    <update id="updateLastSyncTime">
+        UPDATE bucket_statistics
+        SET last_sync_time = NOW(),
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新最后上传时间 -->
+    <update id="updateLastUploadTime">
+        UPDATE bucket_statistics
+        SET last_upload_time = NOW(),
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新最后下载时间 -->
+    <update id="updateLastDownloadTime">
+        UPDATE bucket_statistics
+        SET last_download_time = NOW(),
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新最后删除时间 -->
+    <update id="updateLastDeleteTime">
+        UPDATE bucket_statistics
+        SET last_delete_time = NOW(),
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 查询所有活跃的统计 -->
+    <select id="selectActiveStatistics" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_statistics
+        WHERE status = 'ACTIVE'
+        ORDER BY updated_time DESC
+    </select>
+
+</mapper>

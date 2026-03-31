@@ -1,0 +1,324 @@
+# DudaNexus 微服务 Docker Compose 配置
+# 使用方法: docker-compose up -d
+
+services:
+  # ==========================
+  # 基础设施服务 (INFRA_GROUP)
+  # ==========================
+
+  # ID生成器服务 - 必须最先启动
+  duda-id-generator:
+    image: duda/id-generator-provider:1.0.0
+    container_name: duda-id-generator
+    ports:
+      - "9090:9090"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms256m -Xmx256m
+      - SNOWFLAKE_MACHINE_ID=1
+    networks:
+      - duda-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # ==========================
+  # 业务微服务
+  # ==========================
+
+  # 消息服务 (MSG_GROUP)
+  duda-msg-provider:
+    image: duda/msg-provider:1.0.0
+    container_name: duda-msg-provider
+    ports:
+      - "9091:9091"
+      - "20881:20880"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_CLOUD_NACOS_CONFIG_IMPORT_CHECK_ENABLED=false
+      - DUBBO_SERIALIZE_CHECK_STATUS=DISABLE
+      # Nacos 配置
+      - NACOS_HOST=120.26.170.213
+      - NACOS_PORT=8848
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_NAMESPACE=duda-dev
+      # Redis 配置
+      - SPRING_DATA_REDIS_HOST=120.26.170.213
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATA_REDIS_PASSWORD=duda2024
+      - SPRING_DATA_REDIS_DATABASE=0
+    entrypoint:
+      - java
+      - -Xms256m
+      - -Xmx512m
+      - -jar
+      - /app.jar
+    volumes:
+      # 🔥 挂载本地编译的jar文件 - 修改代码后只需 mvn clean package，然后重启容器即可
+      - ./duda-msg/duda-msg-provider/duda-msg-provider-1.0.0-SNAPSHOT.jar://app.jar:ro
+    networks:
+      - duda-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9091/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # 用户Provider服务 (USER_GROUP)
+  duda-user-provider:
+    image: duda/user-provider:1.0.0
+    build:
+      context: ./duda-usercenter/duda-user-provider
+      dockerfile: Dockerfile
+    container_name: duda-user-provider
+    ports:
+      - "8082:8082"
+      - "20882:20880"
+    entrypoint:
+      - java
+      - -Ddubbo.serialize.serialize-check-status=DISABLE
+      - -Xms512m
+      - -Xmx512m
+      - -jar
+      - /app.jar
+    volumes:
+      - /var/log/duda/user:/var/log/duda
+      - ./duda-usercenter/duda-user-provider/duda-user-provider-1.0.0-SNAPSHOT.jar://app.jar:ro
+    networks:
+      - duda-network
+    depends_on:
+      duda-id-generator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # 用户API服务 (USER_GROUP)
+  duda-user-api:
+    image: user-api:latest
+    build:
+      context: ./duda-usercenter/duda-user-api
+      dockerfile: Dockerfile
+    container_name: duda-user-api
+    ports:
+      - "8083:8083"
+    command:
+      - java
+      - -Ddubbo.serialize.serialize-check-status=DISABLE
+      - -Xms512m
+      - -Xmx512m
+      - -Djava.security.egd=file:/dev/./urandom
+      - --add-opens=java.base/java.lang=ALL-UNNAMED
+      - --add-opens=java.base/java.io=ALL-UNNAMED
+      - --add-opens=java.base/java.util=ALL-UNNAMED
+      - --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+      - --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED
+      - --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+      - --add-opens=java.base/java.util=ALL-UNNAMED
+      - --add-opens=java.base/java.math=ALL-UNNAMED
+      - -jar
+      - /app.jar
+    volumes:
+      - ./duda-usercenter/duda-user-api/duda-user-api-1.0.0-SNAPSHOT.jar://app.jar:ro
+    networks:
+      - duda-network
+    depends_on:
+      duda-user-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # 文件Provider服务 (FILE_GROUP)
+  duda-file-provider:
+    build:
+      context: ./duda-file/duda-file-provider
+      dockerfile: Dockerfile
+    image: duda/file-provider:1.0.0
+    container_name: duda-file-provider
+    ports:
+      - "8084:8080"
+      - "20883:20880"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms512m -Xmx512m
+      # OSS 配置（用于RPC失败时的fallback）
+      - OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID}
+      - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET}
+      - OSS_STS_ROLE_ARN=${OSS_STS_ROLE_ARN}
+      - OSS_REGION=${OSS_REGION:-cn-hangzhou}
+    volumes:
+      - /var/log/duda/file:/var/log/duda
+      # 🔥 挂载本地编译的jar文件 - 修改代码后只需 mvn clean package，然后重启容器即可
+      - ./duda-file/duda-file-provider/target/duda-file-provider-1.0.0-SNAPSHOT.jar://app.jar:ro
+    networks:
+      - duda-network
+    depends_on:
+      duda-id-generator:
+        condition: service_healthy
+    # healthcheck:
+    #   test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+    #   interval: 30s
+    #   timeout: 3s
+    #   retries: 3
+    #   start_period: 60s
+    restart: unless-stopped
+
+  # 文件API服务 (FILE_GROUP)
+  duda-file-api:
+    build:
+      context: ./duda-file/duda-file-api
+      dockerfile: Dockerfile
+    image: duda/file-api:1.0.0
+    container_name: duda-file-api
+    ports:
+      - "8085:8085"
+      - "20885:20885"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - JAVA_OPTS=-Xms512m -Xmx512m
+      # OSS STS 配置
+      - OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID}
+      - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET}
+      - OSS_STS_ROLE_ARN=${OSS_STS_ROLE_ARN}
+      - OSS_REGION=${OSS_REGION:-cn-hangzhou}
+      - OSS_BUCKET=${OSS_BUCKET:-duda-java-backend-test}
+    volumes:
+      # 🔥 挂载本地编译的jar文件 - 修改代码后只需 mvn clean package，然后重启容器即可
+      - ./duda-file/duda-file-api/target/duda-file-api-1.0.0-SNAPSHOT-exec.jar://app.jar:ro
+      - /var/log/duda/file:/var/log/duda
+    entrypoint: ["sh", "-c", "java $JAVA_OPTS -jar //app.jar"]
+    networks:
+      - duda-network
+    depends_on:
+      - duda-file-provider
+    # healthcheck:
+    #   test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8085/actuator/health"]
+    #   interval: 30s
+    #   timeout: 3s
+    #   retries: 3
+    #   start_period: 60s
+    restart: unless-stopped
+
+  # ==========================
+  # 租户服务 (TENANT_GROUP)
+  # ==========================
+
+  # 租户Provider服务
+  duda-tenant-provider:
+    image: duda/tenant-provider:1.0.0
+    build:
+      context: ./duda-tenant/duda-tenant-provider
+      dockerfile: Dockerfile
+    container_name: duda-tenant-provider
+    ports:
+      - "8088:8088"
+      - "20886:20885"
+    entrypoint:
+      - java
+      - -Ddubbo.serialize.serialize-check-status=DISABLE
+      - -Xms512m
+      - -Xmx512m
+      - -jar
+      - /app.jar
+    volumes:
+      - /var/log/duda/tenant:/var/log/duda
+      - ./duda-tenant/duda-tenant-provider/duda-tenant-provider-1.0.0-SNAPSHOT.jar://app.jar:ro
+    networks:
+      - duda-network
+    depends_on:
+      duda-id-generator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8088/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # 租户API服务
+  duda-tenant-api:
+    image: eclipse-temurin:17-jre
+    build:
+      context: ./duda-tenant/duda-tenant-api
+      dockerfile: Dockerfile
+    container_name: duda-tenant-api
+    ports:
+      - "8089:8089"
+    command:
+      - java
+      - -Ddubbo.serialize.serialize-check-status=DISABLE
+      - -Xms512m
+      - -Xmx512m
+      - -jar
+      - /app.jar
+    volumes:
+      - ./duda-tenant/duda-tenant-api/duda-tenant-api-1.0.0-SNAPSHOT.jar://app.jar:ro
+    networks:
+      - duda-network
+    depends_on:
+      - duda-tenant-provider
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8089/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # ==========================
+  # 网关服务 (GATEWAY_GROUP)
+  # ==========================
+
+  # 网关服务 - 统一入口 + Swagger文档
+  # ⚠️ 暂时禁用，开发中
+  # duda-gateway:
+  #   build:
+  #     context: ./duda-gateway
+  #     dockerfile: Dockerfile
+  #   image: duda/gateway:1.0.0
+  #   container_name: duda-gateway
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - SPRING_PROFILES_ACTIVE=dev
+  #     - JAVA_OPTS=-Xms512m -Xmx1024m
+  #   volumes:
+  #     - /var/log/duda/gateway:/var/log/duda
+  #   networks:
+  #     - duda-network
+  #   depends_on:
+  #     - duda-user-provider
+  #     - duda-user-api
+  #     - duda-msg-provider
+  #     - duda-file-provider
+  #     - duda-file-api
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+  #     interval: 30s
+  #     timeout: 3s
+  #     retries: 3
+  #     start_period: 90s
+  #   restart: unless-stopped
+
+# 网络配置
+networks:
+  duda-network:
+    driver: bridge
+    name: duda-network

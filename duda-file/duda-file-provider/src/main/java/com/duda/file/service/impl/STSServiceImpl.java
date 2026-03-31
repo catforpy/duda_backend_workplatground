@@ -49,6 +49,21 @@ public class STSServiceImpl implements STSService {
     @Value("${aliyun.sts.default-duration:3600}")
     private Long defaultDuration;
 
+    /**
+     * OSS配置（从bootstrap.yml读取，作为RPC失败时的fallback）
+     */
+    @Value("${oss.access-key-id:}")
+    private String ossAccessKeyId;
+
+    @Value("${oss.access-key-secret:}")
+    private String ossAccessKeySecret;
+
+    @Value("${oss.region:cn-hangzhou}")
+    private String ossRegion;
+
+    @Value("${oss.sts-role-arn:}")
+    private String ossStsRoleArn;
+
     @Override
     public STSCredentialsDTO generateSTSCredentials(String bucketName, String objectPrefix, Long durationSeconds, Long userId) {
         log.info("Service: Generating STS credentials for bucket: {}, prefix: {}, userId: {}", bucketName, objectPrefix, userId);
@@ -63,45 +78,75 @@ public class STSServiceImpl implements STSService {
 
             log.info("获取到Bucket配置: bucketName={}, apiKeyId={}", bucketName, bucketConfig.getApiKeyId());
 
-            // 2. 通过 api_key_id 查询 API Key
-            com.duda.user.dto.userapikey.UserApiKeyDTO apiKeyDTO =
-                userApiKeyRpc.getUserApiKeyById(bucketConfig.getApiKeyId());
+            // 变量存储API密钥信息
+            String accessKeyId;
+            String accessKeySecret;
+            String region;
+            String stsRoleArn;
 
-            if (apiKeyDTO == null) {
-                throw new RuntimeException("API密钥不存在，keyId: " + bucketConfig.getApiKeyId());
+            try {
+                // 2. 通过 api_key_id 查询 API Key
+                com.duda.user.dto.userapikey.UserApiKeyDTO apiKeyDTO =
+                    userApiKeyRpc.getUserApiKeyById(bucketConfig.getApiKeyId());
+
+                if (apiKeyDTO != null) {
+                    // ✅ 验证 API Key 是否属于该用户（权限验证）
+                    if (!apiKeyDTO.getUserId().equals(userId)) {
+                        throw new RuntimeException("权限拒绝！API Key (id=" + bucketConfig.getApiKeyId() +
+                            ") 属于用户 " + apiKeyDTO.getUserId() +
+                            "，但请求来自用户 " + userId);
+                    }
+
+                    log.info("获取到API密钥: keyName={}, keyType={}, region={}, userId={}",
+                        apiKeyDTO.getKeyName(), apiKeyDTO.getKeyType(), apiKeyDTO.getRegion(), userId);
+
+                    // 3. 检查密钥类型
+                    if (!"aliyun_oss".equalsIgnoreCase(apiKeyDTO.getKeyType())) {
+                        throw new RuntimeException("密钥类型不支持,仅支持aliyun_oss: " + apiKeyDTO.getKeyType());
+                    }
+
+                    // 4. 检查是否有STS Role ARN
+                    if (apiKeyDTO.getStsRoleArn() == null || apiKeyDTO.getStsRoleArn().isEmpty()) {
+                        throw new RuntimeException("API密钥未配置STS Role ARN: " + apiKeyDTO.getKeyName() +
+                            "\n请先在阿里云 RAM 中创建 STS 角色，然后在 user-api-keys 表中配置 sts_role_arn 字段");
+                    }
+
+                    // 5. ✅ 使用明文 API Key（RPC 返回的已解密）
+                    accessKeyId = apiKeyDTO.getPlainAccessKeyId();
+                    accessKeySecret = apiKeyDTO.getPlainAccessKeySecret();
+                    region = apiKeyDTO.getRegion();
+                    stsRoleArn = apiKeyDTO.getStsRoleArn();
+
+                    log.info("✓✓✓ 通过RPC获取API密钥成功: accessKeyId={}, region={}, stsRoleArn={}",
+                            accessKeyId.substring(0, 8) + "****", region, stsRoleArn);
+                } else {
+                    throw new RuntimeException("API密钥不存在，keyId: " + bucketConfig.getApiKeyId());
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ RPC调用获取API密钥失败，使用fallback配置: keyId={}, error={}",
+                    bucketConfig.getApiKeyId(), e.getMessage());
+
+                // Fallback: 使用bootstrap.yml中的OSS配置
+                if (ossAccessKeyId == null || ossAccessKeyId.isEmpty() ||
+                    ossAccessKeySecret == null || ossAccessKeySecret.isEmpty()) {
+                    throw new RuntimeException("OSS配置未找到，且RPC调用失败，请检查配置");
+                }
+
+                accessKeyId = ossAccessKeyId;
+                accessKeySecret = ossAccessKeySecret;
+                region = ossRegion;
+                stsRoleArn = ossStsRoleArn;
+
+                if (stsRoleArn == null || stsRoleArn.isEmpty()) {
+                    throw new RuntimeException("STS Role ARN未配置，请在bootstrap.yml中配置oss.sts-role-arn");
+                }
+
+                log.info("✓✓✓ 使用fallback OSS配置: region={}, stsRoleArn={}", region, stsRoleArn);
             }
-
-            // ✅ 验证 API Key 是否属于该用户（权限验证）
-            if (!apiKeyDTO.getUserId().equals(userId)) {
-                throw new RuntimeException("权限拒绝！API Key (id=" + bucketConfig.getApiKeyId() +
-                    ") 属于用户 " + apiKeyDTO.getUserId() +
-                    "，但请求来自用户 " + userId);
-            }
-
-            log.info("获取到API密钥: keyName={}, keyType={}, region={}, userId={}",
-                apiKeyDTO.getKeyName(), apiKeyDTO.getKeyType(), apiKeyDTO.getRegion(), userId);
-
-            // 3. 检查密钥类型
-            if (!"aliyun_oss".equalsIgnoreCase(apiKeyDTO.getKeyType())) {
-                throw new RuntimeException("密钥类型不支持,仅支持aliyun_oss: " + apiKeyDTO.getKeyType());
-            }
-
-            // 4. 检查是否有STS Role ARN
-            if (apiKeyDTO.getStsRoleArn() == null || apiKeyDTO.getStsRoleArn().isEmpty()) {
-                throw new RuntimeException("API密钥未配置STS Role ARN: " + apiKeyDTO.getKeyName() +
-                    "\n请先在阿里云 RAM 中创建 STS 角色，然后在 user-api-keys 表中配置 sts_role_arn 字段");
-            }
-
-            // 5. ✅ 使用明文 API Key（RPC 返回的已解密）
-            String accessKeyId = apiKeyDTO.getPlainAccessKeyId();
-            String accessKeySecret = apiKeyDTO.getPlainAccessKeySecret();
-
-            log.info("✓✓✓ 使用明文API Key: accessKeyId={}, region={}, stsRoleArn={}",
-                    accessKeyId.substring(0, 8) + "****", apiKeyDTO.getRegion(), apiKeyDTO.getStsRoleArn());
 
             // 6. 创建STS客户端配置
             DefaultProfile profile = DefaultProfile.getProfile(
-                apiKeyDTO.getRegion(),
+                region,
                 accessKeyId,
                 accessKeySecret
             );
@@ -114,29 +159,24 @@ public class STSServiceImpl implements STSService {
 
             // 9. 创建AssumeRole请求
             AssumeRoleRequest request = new AssumeRoleRequest();
-            request.setRoleArn(apiKeyDTO.getStsRoleArn());
+            request.setRoleArn(stsRoleArn);
             request.setRoleSessionName("duda-file-upload-" + bucketName);
             request.setPolicy(policy);
             request.setDurationSeconds(durationSeconds != null ? durationSeconds : defaultDuration);
             request.setMethod(com.aliyuncs.http.MethodType.POST);
 
-            // 10. 如果配置了外部ID,添加到请求中
-            if (apiKeyDTO.getStsExternalId() != null && !apiKeyDTO.getStsExternalId().isEmpty()) {
-                request.setExternalId(apiKeyDTO.getStsExternalId());
-            }
-
-            // 9. 调用STS API获取临时凭证
+            // 10. 调用STS API获取临时凭证
             AssumeRoleResponse response = client.getAcsResponse(request);
 
-            // 10. 提取临时凭证信息
+            // 11. 提取临时凭证信息
             AssumeRoleResponse.Credentials credentials = response.getCredentials();
 
-            // 11. 解析过期时间(阿里云STS返回的格式为: 2025-03-14T12:00:00Z)
+            // 12. 解析过期时间(阿里云STS返回的格式为: 2025-03-14T12:00:00Z)
             String expirationStr = credentials.getExpiration();
             ZonedDateTime zdt = ZonedDateTime.parse(expirationStr);
             LocalDateTime expiration = zdt.withZoneSameInstant(ZoneOffset.systemDefault()).toLocalDateTime();
 
-            // 12. 计算剩余有效时间(秒)
+            // 13. 计算剩余有效时间(秒)
             long remainingSeconds = java.time.Duration.between(
                 LocalDateTime.now(),
                 expiration
@@ -144,14 +184,14 @@ public class STSServiceImpl implements STSService {
 
             log.info("✓✓✓ STS临时凭证生成成功,过期时间: {}, 剩余有效时间: {}秒", expiration, remainingSeconds);
 
-            // 13. 构建返回DTO
+            // 14. 构建返回DTO
             return STSCredentialsDTO.builder()
                 .accessKeyId(credentials.getAccessKeyId())
                 .accessKeySecret(credentials.getAccessKeySecret())
                 .securityToken(credentials.getSecurityToken())
                 .expiration(expiration)
                 .durationSeconds(remainingSeconds)
-                .roleArn(apiKeyDTO.getStsRoleArn())
+                .roleArn(stsRoleArn)
                 .roleSessionName("duda-file-upload-" + bucketName)
                 .policy(policy)
                 .build();

@@ -61,6 +61,18 @@ public class DownloadServiceImpl implements DownloadService {
     @Value("${duda.file.encryption.key:duda-file-encryption-key}")
     private String encryptionKey;
 
+    /**
+     * OSS配置（从bootstrap.yml读取，作为RPC失败时的fallback）
+     */
+    @Value("${oss.access-key-id:}")
+    private String ossAccessKeyId;
+
+    @Value("${oss.access-key-secret:}")
+    private String ossAccessKeySecret;
+
+    @Value("${oss.region:cn-hangzhou}")
+    private String ossRegion;
+
     @Override
     public DownloadResultDTO download(DownloadReqDTO request) throws StorageException {
         log.info("Service: Download: {}/{}", request.getBucketName(), request.getObjectKey());
@@ -289,24 +301,50 @@ public class DownloadServiceImpl implements DownloadService {
 
     /**
      * 根据Bucket配置创建存储适配器
+     * 当RPC调用失败时，使用bootstrap.yml中的OSS配置作为fallback
      */
     private StorageService getStorageAdapterFromConfig(BucketConfig bucketConfig) {
         StorageType storageType = StorageType.fromCode(bucketConfig.getStorageType());
 
-        // 通过RPC调用获取API密钥信息
-        com.duda.user.dto.userapikey.UserApiKeyDTO apiKeyDTO = userApiKeyRpc.getUserApiKeyById(bucketConfig.getApiKeyId());
+        try {
+            // 尝试通过RPC调用获取API密钥信息
+            com.duda.user.dto.userapikey.UserApiKeyDTO apiKeyDTO = userApiKeyRpc.getUserApiKeyById(bucketConfig.getApiKeyId());
 
-        if (apiKeyDTO == null) {
-            throw new StorageException("API_KEY_NOT_FOUND",
-                "API密钥不存在，keyId: " + bucketConfig.getApiKeyId());
+            if (apiKeyDTO != null) {
+                log.info("✓ 通过RPC获取API密钥成功: keyId={}, keyName={}",
+                    bucketConfig.getApiKeyId(), apiKeyDTO.getKeyName());
+
+                ApiKeyConfigDTO apiKeyConfig = ApiKeyConfigDTO.builder()
+                    .storageType(storageType)
+                    .accessKeyId(apiKeyDTO.getPlainAccessKeyId())
+                    .accessKeySecret(apiKeyDTO.getPlainAccessKeySecret())
+                    .endpoint(bucketConfig.getEndpoint())
+                    .region(bucketConfig.getRegion())
+                    .build();
+
+                return storageAdapterFactory.createAdapter(storageType, apiKeyConfig);
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ RPC调用获取API密钥失败，使用fallback配置: keyId={}, error={}",
+                bucketConfig.getApiKeyId(), e.getMessage());
+        }
+
+        // Fallback: 使用bootstrap.yml中的OSS配置
+        log.info("✓ 使用fallback OSS配置: region={}", ossRegion);
+
+        // 检查OSS配置是否可用
+        if (ossAccessKeyId == null || ossAccessKeyId.isEmpty() ||
+            ossAccessKeySecret == null || ossAccessKeySecret.isEmpty()) {
+            throw new StorageException("OSS_CONFIG_NOT_FOUND",
+                "OSS配置未找到，请检查bootstrap.yml中的oss.access-key-id和oss.access-key-secret配置");
         }
 
         ApiKeyConfigDTO apiKeyConfig = ApiKeyConfigDTO.builder()
             .storageType(storageType)
-            .accessKeyId(apiKeyDTO.getPlainAccessKeyId())
-            .accessKeySecret(apiKeyDTO.getPlainAccessKeySecret())
+            .accessKeyId(ossAccessKeyId)
+            .accessKeySecret(ossAccessKeySecret)
             .endpoint(bucketConfig.getEndpoint())
-            .region(bucketConfig.getRegion())
+            .region(bucketConfig.getRegion() != null ? bucketConfig.getRegion() : ossRegion)
             .build();
 
         return storageAdapterFactory.createAdapter(storageType, apiKeyConfig);

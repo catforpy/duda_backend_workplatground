@@ -90,6 +90,7 @@ public class UserServiceImpl implements UserService {
         Long userId = idGeneratorRpc.generateUserId(); // 调用RPC生成雪花ID
         UserPO userPO = new UserPO();
         userPO.setId(userId);
+        userPO.setTenantId(null); // 全局用户，不属于任何租户（通过tenant_user_relations建立关系）
         userPO.setUserType(registerReq.getUserType());
         userPO.setUsername(registerReq.getUsername()); // 兼容旧字段，用于数据迁移兼容
         userPO.setPassword(hashedPassword); // 兼容旧字段，保持数据一致性
@@ -100,6 +101,7 @@ public class UserServiceImpl implements UserService {
         // 4. 创建登录账号（user_accounts 表）
         UserAccount userAccount = new UserAccount();
         userAccount.setUserId(userId);
+        userAccount.setTenantId(null); // 全局用户账号，不属于任何租户
         userAccount.setUserShard(0); // TODO: 根据userId计算分片
         userAccount.setLoginType("username"); // 目前只支持username注册
         userAccount.setLoginAccount(registerReq.getUsername());
@@ -204,12 +206,17 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserDTO getUserById(Long userId) {
+        logger.info("查询用户信息，userId:{}", userId);
+
         // 1. 先从缓存获取
         String cacheKey = redisKeyBuilder.buildUserInfoKey(userId);
         UserDTO cachedUser = redisUtils.get(cacheKey, UserDTO.class);
         if (cachedUser != null) {
+            logger.info("✅ 缓存命中，userId:{}, 缓存key:{}", userId, cacheKey);
             return cachedUser;
         }
+
+        logger.info("❌ 缓存未命中，查询数据库，userId:{}", userId);
 
         // 2. 从数据库查询
         UserPO userPO = userMapper.selectById(userId);
@@ -222,6 +229,7 @@ public class UserServiceImpl implements UserService {
 
         // 4. 存入缓存（1小时）
         redisUtils.set(cacheKey, userDTO, 3600);
+        logger.info("✅ 用户信息已写入缓存，userId:{}, 缓存key:{}, 缓存时长:3600秒", userId, cacheKey);
 
         return userDTO;
     }

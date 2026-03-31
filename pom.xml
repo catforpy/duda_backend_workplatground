@@ -25,6 +25,7 @@
         <module>duda-common/duda-common-redis</module>
         <module>duda-common/duda-common-rocketmq</module>
         <module>duda-common/duda-common-security</module>
+        <module>duda-common/duda-common-tenant</module>
 
         <!-- 消息服务 -->
         <module>duda-msg</module>
@@ -33,6 +34,9 @@
         <module>duda-usercenter/duda-user-interface</module>
         <module>duda-usercenter/duda-user-api</module>
         <module>duda-usercenter/duda-user-provider</module>
+
+        <!-- 租户服务 -->
+        <module>duda-tenant</module>
 
         <!-- 文件服务 -->
         <module>duda-file</module>

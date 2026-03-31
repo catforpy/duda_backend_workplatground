@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
+
 /**
  * 短信验证码校验结果DTO
  *
@@ -13,7 +15,9 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class MsgCheckDTO {
+public class MsgCheckDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 校验是否通过

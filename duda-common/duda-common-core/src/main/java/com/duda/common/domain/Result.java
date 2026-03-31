@@ -17,11 +17,12 @@ import java.io.Serializable;
  * return Result.error("错误信息");
  * </pre>
  *
+ * @param <T> 数据类型
  * @author DudaNexus
  * @since 2026-03-10
  */
 @Data
-public class Result implements Serializable {
+public class Result<T> implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
@@ -38,7 +39,7 @@ public class Result implements Serializable {
     /**
      * 数据
      */
-    private Object data;
+    private T data;
 
     /**
      * 时间戳
@@ -52,7 +53,7 @@ public class Result implements Serializable {
         this.timestamp = System.currentTimeMillis();
     }
 
-    public Result(int code, String message, Object data) {
+    public Result(int code, String message, T data) {
         this.code = code;
         this.message = message;
         this.data = data;
@@ -62,64 +63,64 @@ public class Result implements Serializable {
     /**
      * 成功返回（无数据）
      */
-    public static Result success() {
-        return new Result(200, "success", null);
+    public static Result<Void> success() {
+        return new Result<>(200, "success", null);
     }
 
     /**
      * 成功返回（带数据）
      */
-    public static Result success(Object data) {
-        return new Result(200, "success", data);
+    public static <T> Result<T> success(T data) {
+        return new Result<>(200, "success", data);
     }
 
     /**
      * 成功返回（自定义消息）
      */
-    public static Result success(String message, Object data) {
-        return new Result(200, message, data);
+    public static <T> Result<T> success(String message, T data) {
+        return new Result<>(200, message, data);
     }
 
     /**
      * 失败返回（默认错误码500）
      */
-    public static Result error() {
-        return new Result(500, "system error", null);
+    public static Result<Void> error() {
+        return new Result<>(500, "system error", null);
     }
 
     /**
      * 失败返回（自定义消息）
      */
-    public static Result error(String message) {
-        return new Result(500, message, null);
+    public static Result<Void> error(String message) {
+        return new Result<>(500, message, null);
     }
 
     /**
      * 失败返回（自定义错误码和消息）
      */
-    public static Result error(int code, String message) {
-        return new Result(code, message, null);
+    public static Result<Void> error(int code, String message) {
+        return new Result<>(code, message, null);
     }
 
     /**
      * 业务错误（错误码501）
      */
-    public static Result bizError(String message) {
-        return new Result(501, message, null);
+    public static Result<Void> bizError(String message) {
+        return new Result<>(501, message, null);
     }
 
     /**
      * 参数错误（错误码400）
      */
-    public static Result errorParam() {
-        return new Result(400, "error param", null);
+    public static Result<Void> errorParam() {
+        return new Result<>(400, "error param", null);
     }
 
     /**
      * 参数错误（自定义消息）
      */
-    public static Result errorParam(String message) {
-        return new Result(400, message, null);
+    public static Result<Void> errorParam(String message) {
+        return new Result<>(400, message, null);
     }
 
     /**

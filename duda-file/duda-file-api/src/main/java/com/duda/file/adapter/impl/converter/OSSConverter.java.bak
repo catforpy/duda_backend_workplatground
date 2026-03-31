@@ -1,0 +1,288 @@
+package com.duda.file.adapter.impl.converter;
+
+import com.aliyun.oss.model.*;
+import com.duda.file.dto.bucket.BucketDTO;
+import com.duda.file.dto.object.ObjectDTO;
+import com.duda.file.dto.object.ObjectMetadataDTO;
+import com.duda.file.dto.upload.UploadResultDTO;
+import com.duda.file.enums.AclType;
+import com.duda.file.enums.StorageClass;
+import com.duda.file.enums.StorageType;
+
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * OSS对象转换工具类
+ * 用于在OSS SDK对象和DTO之间进行转换
+ *
+ * @author duda
+ * @date 2025-03-13
+ */
+public class OSSConverter {
+
+    /**
+     * 将OSS的Bucket转换为DTO
+     */
+    public static BucketDTO toBucketDTO(Bucket ossBucket) {
+        if (ossBucket == null) {
+            return null;
+        }
+
+        return BucketDTO.builder()
+                .bucketName(ossBucket.getName())
+                .region(ossBucket.getLocation())
+                .regionName(ossBucket.getLocation())
+                .creationTime(toLocalDateTime(ossBucket.getCreationDate()))
+                .storageClass(toStorageClass(ossBucket.getStorageClass()))
+                .acl(toAclType(ossBucket.getAcl()))
+                .extranetEndpoint(ossBucket.getExtranetEndpoint())
+                .intranetEndpoint(ossBucket.getIntranetEndpoint())
+                .versioningEnabled(null) // 需要额外查询
+                .tags(new HashMap<>())
+                .status("active")
+                .build();
+    }
+
+    /**
+     * 将OSS的OSSObjectSummary转换为ObjectDTO
+     */
+    public static ObjectDTO toObjectDTO(String bucketName, OSSObjectSummary summary) {
+        if (summary == null) {
+            return null;
+        }
+
+        return ObjectDTO.builder()
+                .bucketName(bucketName)
+                .objectKey(summary.getKey())
+                .eTag(summary.getETag())
+                .size(summary.getSize())
+                .storageClass(toStorageClass(summary.getStorageClass()))
+                .lastModified(toLocalDateTime(summary.getLastModified()))
+                .objectType(summary.isPrefix() ? "directory" : "file")
+                .isDirectory(summary.isPrefix())
+                .build();
+    }
+
+    /**
+     * 将OSS的OSSObject转换为ObjectDTO
+     */
+    public static ObjectDTO toObjectDTO(String bucketName, OSSObject ossObject) {
+        if (ossObject == null) {
+            return null;
+        }
+
+        ObjectMetadata metadata = ossObject.getObjectMetadata();
+        Map<String, String> tags = ossObject.getObjectTagging() != null ?
+                ossObject.getObjectTagging().getTags() : new HashMap<>();
+
+        return ObjectDTO.builder()
+                .bucketName(bucketName)
+                .objectKey(ossObject.getKey())
+                .eTag(metadata.getETag())
+                .size(metadata.getContentLength())
+                .storageClass(toStorageClass(metadata.getOSSStorageClass()))
+                .lastModified(toLocalDateTime(metadata.getLastModified()))
+                .tags(tags)
+                .contentType(metadata.getContentType())
+                .contentEncoding(metadata.getContentEncoding())
+                .cacheControl(metadata.getCacheControl())
+                .contentMD5(metadata.getContentMD5())
+                .crc64(metadata.getServerCRC64())
+                .build();
+    }
+
+    /**
+     * 将OSS的ObjectMetadata转换为ObjectMetadataDTO
+     */
+    public static ObjectMetadataDTO toObjectMetadataDTO(ObjectMetadata metadata) {
+        if (metadata == null) {
+            return null;
+        }
+
+        return ObjectMetadataDTO.builder()
+                .contentType(metadata.getContentType())
+                .contentEncoding(metadata.getContentEncoding())
+                .cacheControl(metadata.getCacheControl())
+                .contentDisposition(metadata.getContentDisposition())
+                .contentLanguage(metadata.getContentLanguage())
+                .expires(toLocalDateTime(metadata.getExpirationTime()))
+                .contentLength(metadata.getContentLength())
+                .storageClass(toStorageClass(metadata.getOSSStorageClass()))
+                .eTag(metadata.getETag())
+                .lastModified(toLocalDateTime(metadata.getLastModified()))
+                .contentMD5(metadata.getContentMD5())
+                .crc64(metadata.getServerCRC64())
+                .userMetadata(metadata.getUserMetadata())
+                .build();
+    }
+
+    /**
+     * 将PutObjectResult转换为UploadResultDTO
+     */
+    public static UploadResultDTO toUploadResultDTO(String bucketName, String objectKey, PutObjectResult result) {
+        if (result == null) {
+            return null;
+        }
+
+        return UploadResultDTO.builder()
+                .bucketName(bucketName)
+                .objectKey(objectKey)
+                .eTag(result.getETag())
+                .versionId(result.getVersionId())
+                .crc64(result.getServerCRC64())
+                .serverSideEncryption(result.getServerSideEncryption())
+                .requestId(result.getRequestId())
+                .success(true)
+                .uploadMethod("simple")
+                .uploadTime(java.time.LocalDateTime.now())
+                .build();
+    }
+
+    /**
+     * 转换存储类枚举
+     */
+    public static StorageClass toStorageClass(com.aliyun.oss.model.StorageClass ossStorageClass) {
+        if (ossStorageClass == null) {
+            return StorageClass.STANDARD;
+        }
+
+        switch (ossStorageClass) {
+            case Standard:
+                return StorageClass.STANDARD;
+            case IA:
+                return StorageClass.IA;
+            case Archive:
+                return StorageClass.ARCHIVE;
+            case ColdArchive:
+                return StorageClass.COLD_ARCHIVE;
+            case DeepColdArchive:
+                return StorageClass.DEEP_COLD_ARCHIVE;
+            default:
+                return StorageClass.STANDARD;
+        }
+    }
+
+    /**
+     * 将StorageClass转换为OSS的StorageClass
+     */
+    public static com.aliyun.oss.model.StorageClass toOSSStorageClass(StorageClass storageClass) {
+        if (storageClass == null) {
+            return com.aliyun.oss.model.StorageClass.Standard;
+        }
+
+        switch (storageClass) {
+            case STANDARD:
+                return com.aliyun.oss.model.StorageClass.Standard;
+            case IA:
+                return com.aliyun.oss.model.StorageClass.IA;
+            case ARCHIVE:
+                return com.aliyun.oss.model.StorageClass.Archive;
+            case COLD_ARCHIVE:
+                return com.aliyun.oss.model.StorageClass.ColdArchive;
+            case DEEP_COLD_ARCHIVE:
+                return com.aliyun.oss.model.StorageClass.DeepColdArchive;
+            default:
+                return com.aliyun.oss.model.StorageClass.Standard;
+        }
+    }
+
+    /**
+     * 转换ACL枚举
+     */
+    public static AclType toAclType(CannedAccessControlList ossAcl) {
+        if (ossAcl == null) {
+            return AclType.PRIVATE;
+        }
+
+        switch (ossAcl) {
+            case Private:
+                return AclType.PRIVATE;
+            case PublicRead:
+                return AclType.PUBLIC_READ;
+            case PublicReadWrite:
+                return AclType.PUBLIC_READ_WRITE;
+            default:
+                return AclType.PRIVATE;
+        }
+    }
+
+    /**
+     * 将AclType转换为OSS的CannedAccessControlList
+     */
+    public static CannedAccessControlList toOSSAclType(AclType aclType) {
+        if (aclType == null) {
+            return CannedAccessControlList.Private;
+        }
+
+        switch (aclType) {
+            case PRIVATE:
+                return CannedAccessControlList.Private;
+            case PUBLIC_READ:
+                return CannedAccessControlList.PublicRead;
+            case PUBLIC_READ_WRITE:
+                return CannedAccessControlList.PublicReadWrite;
+            default:
+                return CannedAccessControlList.Private;
+        }
+    }
+
+    /**
+     * 将Date转换为LocalDateTime
+     */
+    private static LocalDateTime toLocalDateTime(java.util.Date date) {
+        if (date == null) {
+            return null;
+        }
+        return date.toInstant()
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime();
+    }
+
+    /**
+     * 创建ObjectMetadata
+     */
+    public static ObjectMetadata createObjectMetadata(ObjectMetadataDTO metadataDTO) {
+        ObjectMetadata metadata = new ObjectMetadata();
+        if (metadataDTO == null) {
+            return metadata;
+        }
+
+        if (metadataDTO.getContentType() != null) {
+            metadata.setContentType(metadataDTO.getContentType());
+        }
+        if (metadataDTO.getContentEncoding() != null) {
+            metadata.setContentEncoding(metadataDTO.getContentEncoding());
+        }
+        if (metadataDTO.getCacheControl() != null) {
+            metadata.setCacheControl(metadataDTO.getCacheControl());
+        }
+        if (metadataDTO.getContentDisposition() != null) {
+            metadata.setContentDisposition(metadataDTO.getContentDisposition());
+        }
+        if (metadataDTO.getContentLanguage() != null) {
+            metadata.setContentLanguage(metadataDTO.getContentLanguage());
+        }
+        if (metadataDTO.getContentLength() != null) {
+            metadata.setContentLength(metadataDTO.getContentLength());
+        }
+        if (metadataDTO.getContentMD5() != null) {
+            metadata.setContentMD5(metadataDTO.getContentMD5());
+        }
+        if (metadataDTO.getStorageClass() != null) {
+            metadata.setOSSStorageClass(toOSSStorageClass(metadataDTO.getStorageClass()));
+        }
+        if (metadataDTO.getServerSideEncryption() != null) {
+            metadata.setServerSideEncryption(ObjectMetadata.SSEAlgorithm.valueOf(metadataDTO.getServerSideEncryption()));
+        }
+        if (metadataDTO.getUserMetadata() != null) {
+            metadata.setUserMetadata(metadataDTO.getUserMetadata());
+        }
+
+        return metadata;
+    }
+}

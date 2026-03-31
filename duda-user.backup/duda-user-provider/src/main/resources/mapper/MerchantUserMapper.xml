@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.user.provider.mapper.MerchantUserMapper">
+
+    <!-- 结果映射 - 完整字段映射（49个字段） -->
+    <resultMap id="BaseResultMap" type="com.duda.user.provider.po.MerchantUserPO">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="merchant_id" property="merchantId"/>
+        <result column="platform_user_id" property="platformUserId"/>
+        <result column="platform_user_shard" property="platformUserShard"/>
+        <result column="merchant_user_id" property="merchantUserId"/>
+        <result column="mini_app_openid" property="miniAppOpenid"/>
+        <result column="mini_app_unionid" property="miniAppUnionid"/>
+        <result column="mini_app_session_key" property="miniAppSessionKey"/>
+        <result column="wechat_openid" property="wechatOpenid"/>
+        <result column="wechat_unionid" property="wechatUnionid"/>
+        <result column="alipay_user_id" property="alipayUserId"/>
+        <result column="alipay_openid" property="alipayOpenid"/>
+        <result column="nickname" property="nickname"/>
+        <result column="avatar" property="avatar"/>
+        <result column="gender" property="gender"/>
+        <result column="birthday" property="birthday"/>
+        <result column="country" property="country"/>
+        <result column="province" property="province"/>
+        <result column="city" property="city"/>
+        <result column="language" property="language"/>
+        <result column="source_type" property="sourceType"/>
+        <result column="source_channel" property="sourceChannel"/>
+        <result column="source_scene" property="sourceScene"/>
+        <result column="user_tags" property="userTags"/>
+        <result column="user_remark" property="userRemark"/>
+        <result column="user_level" property="userLevel"/>
+        <result column="user_group" property="userGroup"/>
+        <result column="user_score" property="userScore"/>
+        <result column="user_balance" property="userBalance"/>
+        <!-- JSON字段映射 - 使用JsonTypeHandler -->
+        <result column="ext_profile" property="extProfile" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="preference_config" property="preferenceConfig" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="status" property="status"/>
+        <result column="follow_status" property="followStatus"/>
+        <result column="subscribe_status" property="subscribeStatus"/>
+        <result column="visit_count" property="visitCount"/>
+        <result column="order_count" property="orderCount"/>
+        <result column="consumption_amount" property="consumptionAmount"/>
+        <result column="last_visit_time" property="lastVisitTime"/>
+        <result column="last_visit_ip" property="lastVisitIp"/>
+        <result column="first_visit_time" property="firstVisitTime"/>
+        <result column="bind_time" property="bindTime"/>
+        <result column="unbind_time" property="unbindTime"/>
+        <result column="last_order_time" property="lastOrderTime"/>
+        <result column="last_pay_time" property="lastPayTime"/>
+        <result column="remark" property="remark"/>
+        <result column="deleted" property="deleted"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- 通用查询条件 ⭐ 自动注入租户过滤 -->
+    <sql id="queryCondition">
+        <where>
+            deleted = 0
+            <if test="tenantId != null">
+                AND tenant_id = #{tenantId}
+            </if>
+            <if test="merchantId != null">
+                AND merchant_id = #{merchantId}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="userLevel != null and userLevel != ''">
+                AND user_level = #{userLevel}
+            </if>
+            <if test="nickname != null and nickname != ''">
+                AND nickname LIKE CONCAT('%', #{nickname}, '%')
+            </if>
+            <if test="miniAppOpenid != null and miniAppOpenid != ''">
+                AND mini_app_openid = #{miniAppOpenid}
+            </if>
+            <if test="wechatUnionid != null and wechatUnionid != ''">
+                AND wechat_unionid = #{wechatUnionid}
+            </if>
+        </where>
+    </sql>
+
+    <!-- 分页查询商户用户列表（带租户隔离）⭐ -->
+    <select id="selectPageWithTenant" resultMap="BaseResultMap">
+        SELECT * FROM merchant_users
+        <include refid="queryCondition"/>
+        ORDER BY id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 根据平台用户ID查询所有商户关联（带租户隔离）⭐ -->
+    <select id="selectByPlatformUser" resultMap="BaseResultMap">
+        SELECT * FROM merchant_users
+        <where>
+            deleted = 0
+            AND tenant_id = #{tenantId}
+            AND platform_user_id = #{platformUserId}
+            AND platform_user_shard = #{platformUserShard}
+        </where>
+        ORDER BY bind_time DESC
+    </select>
+
+</mapper>

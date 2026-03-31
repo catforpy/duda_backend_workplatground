@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.user.provider.mapper.OpenApiKeysMapper">
+
+    <!-- 结果映射 - 完整字段映射（61个字段） -->
+    <resultMap id="BaseResultMap" type="com.duda.user.provider.po.OpenApiKeysPO">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="app_id" property="appId"/>
+        <result column="app_secret" property="appSecret"/>
+        <result column="app_name" property="appName"/>
+        <result column="app_code" property="appCode"/>
+        <result column="app_type" property="appType"/>
+        <result column="app_category" property="appCategory"/>
+        <result column="app_owner" property="appOwner"/>
+        <result column="app_owner_id" property="appOwnerId"/>
+        <result column="app_description" property="appDescription"/>
+        <result column="app_icon" property="appIcon"/>
+        <result column="app_url" property="appUrl"/>
+        <result column="app_callback_url" property="appCallbackUrl"/>
+        <!-- JSON字段映射 -->
+        <result column="permissions" property="permissions" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="permission_scope" property="permissionScope"/>
+        <result column="allowed_resources" property="allowedResources" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="denied_resources" property="deniedResources" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="rate_limit_enabled" property="rateLimitEnabled"/>
+        <result column="rate_limit_per_second" property="rateLimitPerSecond"/>
+        <result column="rate_limit_per_minute" property="rateLimitPerMinute"/>
+        <result column="rate_limit_per_hour" property="rateLimitPerHour"/>
+        <result column="rate_limit_per_day" property="rateLimitPerDay"/>
+        <result column="burst_limit" property="burstLimit"/>
+        <result column="ip_whitelist_enabled" property="ipWhitelistEnabled"/>
+        <result column="ip_whitelist" property="ipWhitelist" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="ip_blacklist" property="ipBlacklist" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="ip_whitelist_type" property="ipWhitelistType"/>
+        <result column="total_requests" property="totalRequests"/>
+        <result column="success_requests" property="successRequests"/>
+        <result column="failed_requests" property="failedRequests"/>
+        <result column="last_request_time" property="lastRequestTime"/>
+        <result column="last_request_ip" property="lastRequestIp"/>
+        <result column="last_request_path" property="lastRequestPath"/>
+        <result column="avg_response_time" property="avgResponseTime"/>
+        <result column="today_requests" property="todayRequests"/>
+        <result column="today_traffic" property="todayTraffic"/>
+        <result column="month_requests" property="monthRequests"/>
+        <result column="month_traffic" property="monthTraffic"/>
+        <result column="total_traffic" property="totalTraffic"/>
+        <result column="status" property="status"/>
+        <result column="audit_status" property="auditStatus"/>
+        <result column="audit_time" property="auditTime"/>
+        <result column="audit_by" property="auditBy"/>
+        <result column="audit_remark" property="auditRemark"/>
+        <result column="expire_time" property="expireTime"/>
+        <result column="expire_notification_sent" property="expireNotificationSent"/>
+        <result column="secret_rotation_enabled" property="secretRotationEnabled"/>
+        <result column="secret_rotation_days" property="secretRotationDays"/>
+        <result column="last_secret_rotation" property="lastSecretRotation"/>
+        <result column="require_signature" property="requireSignature"/>
+        <result column="signature_algorithm" property="signatureAlgorithm"/>
+        <result column="ext_config" property="extConfig" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="description" property="description"/>
+        <result column="remark" property="remark"/>
+        <result column="deleted" property="deleted"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="create_by" property="createBy"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="version" property="version"/>
+    </resultMap>
+
+    <!-- 通用查询条件 ⭐ 自动注入租户过滤 -->
+    <sql id="queryCondition">
+        <where>
+            deleted = 0
+            <if test="tenantId != null">
+                AND tenant_id = #{tenantId}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="appType != null and appType != ''">
+                AND app_type = #{appType}
+            </if>
+            <if test="appCategory != null and appCategory != ''">
+                AND app_category = #{appCategory}
+            </if>
+            <if test="appName != null and appName != ''">
+                AND app_name LIKE CONCAT('%', #{appName}, '%')
+            </if>
+            <if test="appId != null and appId != ''">
+                AND app_id = #{appId}
+            </if>
+        </where>
+    </sql>
+
+    <!-- 分页查询API密钥列表（带租户隔离）⭐ -->
+    <select id="selectPageWithTenant" resultMap="BaseResultMap">
+        SELECT * FROM open_api_keys
+        <include refid="queryCondition"/>
+        ORDER BY id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 更新API密钥状态（带乐观锁）⭐ -->
+    <update id="updateStatusWithVersion">
+        UPDATE open_api_keys
+        SET status = #{status},
+            audit_status = #{auditStatus},
+            audit_time = #{auditTime},
+            audit_by = #{auditBy},
+            audit_remark = #{auditRemark},
+            update_by = #{updateBy},
+            update_time = NOW(),
+            version = version + 1
+        WHERE id = #{id}
+          AND tenant_id = #{tenantId}
+          AND deleted = 0
+          AND version = #{version}
+    </update>
+
+</mapper>

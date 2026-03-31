@@ -156,13 +156,42 @@ dubbo:
   protocol:
     name: dubbo
     port: -1
-  registry:
-    address: nacos://${spring.cloud.nacos.server-addr}
-    parameters:
-      namespace: ${NACOS_NAMESPACE:duda-dev}
-      group: USER_GROUP
+
+  # 配置多个 Registry - 支持跨分组访问
+  registries:
+    # Registry 1: 基础设施服务（INFRA_GROUP）
+    infraRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: INFRA_GROUP
+        use-as-config-center: false
+        use-as-metadata-center: false
+      default: false
+
+    # Registry 2: 业务服务（USER_GROUP）- 默认 registry
+    userRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: USER_GROUP
+        use-as-config-center: false
+        use-as-metadata-center: false
+      default: true
+
+    # Registry 3: 短信服务（MSG_GROUP）- 支持跨分组访问
+    msgRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: MSG_GROUP
+        use-as-config-center: false
+        use-as-metadata-center: false
+      default: false
+
   scan:
     base-packages: com.duda.user.rpc
   consumer:
     check: false
     timeout: 5000
+    retries: 2

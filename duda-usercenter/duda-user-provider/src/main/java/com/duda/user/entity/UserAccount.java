@@ -35,6 +35,12 @@ public class UserAccount {
     private Long id;
 
     /**
+     * 租户ID
+     */
+    @Schema(description = "租户ID")
+    private Long tenantId;
+
+    /**
      * 关联的用户ID
      */
     @Schema(description = "关联的用户ID")
@@ -102,6 +108,18 @@ public class UserAccount {
      */
     @Schema(description = "账号状态")
     private String status;
+
+    /**
+     * 最后登录时间
+     */
+    @Schema(description = "最后登录时间")
+    private LocalDateTime lastLoginTime;
+
+    /**
+     * 最后登录IP
+     */
+    @Schema(description = "最后登录IP")
+    private String lastLoginIp;
 
     /**
      * 创建时间

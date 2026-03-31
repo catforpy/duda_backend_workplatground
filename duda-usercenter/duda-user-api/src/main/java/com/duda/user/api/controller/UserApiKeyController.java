@@ -9,7 +9,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,12 +21,13 @@ import java.util.List;
  * @author DudaNexus
  * @since 2026-03-17
  */
-@Slf4j
 @Tag(name = "用户API密钥管理", description = "用户云存储API密钥管理接口")
 @RestController
 @RequestMapping("/api/user-api-keys")
 @CrossOrigin(originPatterns = "*", maxAge = 3600)
 public class UserApiKeyController {
+
+    private static final Logger log = LoggerFactory.getLogger(UserApiKeyController.class);
 
     @Resource
     private UserApiKeyService userApiKeyService;
@@ -51,6 +53,7 @@ public class UserApiKeyController {
     /**
      * 获取用户的所有API密钥
      *
+     * @param tenantId 租户ID
      * @param userId 用户ID
      * @param includeInactive 是否包含禁用的密钥
      * @return API密钥列表
@@ -58,34 +61,40 @@ public class UserApiKeyController {
     @Operation(summary = "获取API密钥列表", description = "查询用户的所有API密钥")
     @GetMapping("/list")
     public Result listUserApiKeys(
+        @Parameter(description = "租户ID", required = true)
+        @RequestParam("tenantId") Long tenantId,
         @Parameter(description = "用户ID", required = true)
         @RequestParam("userId") Long userId,
         @Parameter(description = "是否包含禁用的密钥")
         @RequestParam(value = "includeInactive", defaultValue = "false") Boolean includeInactive) {
 
-        List<UserApiKeyDTO> apiKeys = userApiKeyService.listUserApiKeys(userId, includeInactive);
+        List<UserApiKeyDTO> apiKeys = userApiKeyService.listUserApiKeys(tenantId, userId, includeInactive);
         return Result.success(apiKeys);
     }
 
     /**
      * 获取用户的默认API密钥
      *
+     * @param tenantId 租户ID
      * @param userId 用户ID
      * @return 默认API密钥
      */
     @Operation(summary = "获取默认API密钥", description = "查询用户的默认API密钥")
     @GetMapping("/default")
     public Result getDefaultUserApiKey(
+        @Parameter(description = "租户ID", required = true)
+        @RequestParam("tenantId") Long tenantId,
         @Parameter(description = "用户ID", required = true)
         @RequestParam("userId") Long userId) {
 
-        UserApiKeyDTO apiKey = userApiKeyService.getDefaultUserApiKey(userId);
+        UserApiKeyDTO apiKey = userApiKeyService.getDefaultUserApiKey(tenantId, userId);
         return Result.success(apiKey);
     }
 
     /**
      * 删除用户API密钥
      *
+     * @param tenantId 租户ID
      * @param keyId 密钥ID
      * @param userId 用户ID（用于权限验证）
      * @return 删除结果
@@ -93,12 +102,14 @@ public class UserApiKeyController {
     @Operation(summary = "删除API密钥", description = "删除指定的API密钥")
     @DeleteMapping("/{keyId}")
     public Result deleteUserApiKey(
+        @Parameter(description = "租户ID", required = true)
+        @RequestParam("tenantId") Long tenantId,
         @Parameter(description = "密钥ID", required = true)
         @PathVariable Long keyId,
         @Parameter(description = "用户ID", required = true)
         @RequestParam("userId") Long userId) {
 
-        Boolean success = userApiKeyService.deleteUserApiKey(keyId, userId);
+        Boolean success = userApiKeyService.deleteUserApiKey(tenantId, keyId, userId);
         return success ?
             Result.success("API密钥删除成功", null) :
             Result.error("API密钥删除失败");
@@ -107,6 +118,7 @@ public class UserApiKeyController {
     /**
      * 设置默认密钥
      *
+     * @param tenantId 租户ID
      * @param keyId 密钥ID
      * @param userId 用户ID
      * @return 设置结果
@@ -114,12 +126,14 @@ public class UserApiKeyController {
     @Operation(summary = "设置默认密钥", description = "将指定密钥设为默认密钥")
     @PutMapping("/{keyId}/set-default")
     public Result setDefaultApiKey(
+        @Parameter(description = "租户ID", required = true)
+        @RequestParam("tenantId") Long tenantId,
         @Parameter(description = "密钥ID", required = true)
         @PathVariable Long keyId,
         @Parameter(description = "用户ID", required = true)
         @RequestParam("userId") Long userId) {
 
-        Boolean success = userApiKeyService.setDefaultApiKey(keyId, userId);
+        Boolean success = userApiKeyService.setDefaultApiKey(tenantId, keyId, userId);
         return success ?
             Result.success("默认密钥设置成功", null) :
             Result.error("默认密钥设置失败");
@@ -128,6 +142,7 @@ public class UserApiKeyController {
     /**
      * 更新密钥状态
      *
+     * @param tenantId 租户ID
      * @param keyId 密钥ID
      * @param userId 用户ID
      * @param active 是否启用
@@ -136,6 +151,8 @@ public class UserApiKeyController {
     @Operation(summary = "更新密钥状态", description = "启用或禁用API密钥")
     @PutMapping("/{keyId}/status")
     public Result updateApiKeyStatus(
+        @Parameter(description = "租户ID", required = true)
+        @RequestParam("tenantId") Long tenantId,
         @Parameter(description = "密钥ID", required = true)
         @PathVariable Long keyId,
         @Parameter(description = "用户ID", required = true)
@@ -143,7 +160,7 @@ public class UserApiKeyController {
         @Parameter(description = "是否启用", required = true)
         @RequestParam("active") Boolean active) {
 
-        Boolean success = userApiKeyService.updateApiKeyStatus(keyId, userId, active);
+        Boolean success = userApiKeyService.updateApiKeyStatus(tenantId, keyId, userId, active);
         return success ?
             Result.success("密钥状态更新成功", null) :
             Result.error("密钥状态更新失败");

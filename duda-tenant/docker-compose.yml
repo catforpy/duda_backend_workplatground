@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # duda-tenant-api (HTTP API服务)
+  duda-tenant-api:
+    image: duda-tenant-api:latest
+    container_name: duda-tenant-api
+    restart: always
+    environment:
+      # Spring Profile
+      - SPRING_PROFILES_ACTIVE=dev
+      # Nacos配置 (外部服务)
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR=120.26.170.213:8848
+      - SPRING_CLOUD_NACOS_DISCOVERY_USERNAME=nacos
+      - SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD=nacos
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR=120.26.170.213:8848
+      - SPRING_CLOUD_NACOS_CONFIG_USERNAME=nacos
+      - SPRING_CLOUD_NACOS_CONFIG_PASSWORD=nacos
+      # JVM配置
+      - JVM_XMS=256m
+      - JVM_XMX=512m
+      - TZ=Asia/Shanghai
+    ports:
+      - "8089:8089"    # HTTP端口
+    depends_on:
+      - duda-tenant-provider
+    networks:
+      - duda-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8089/actuator/health"]
+      timeout: 10s
+      retries: 5
+      interval: 30s
+      start_period: 60s
+
+  # duda-tenant-provider (Dubbo RPC服务)
+  duda-tenant-provider:
+    image: duda-tenant-provider:latest
+    container_name: duda-tenant-provider
+    restart: always
+    environment:
+      # Spring Profile
+      - SPRING_PROFILES_ACTIVE=dev
+      # Nacos配置 (外部服务)
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR=120.26.170.213:8848
+      - SPRING_CLOUD_NACOS_DISCOVERY_USERNAME=nacos
+      - SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD=nacos
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR=120.26.170.213:8848
+      - SPRING_CLOUD_NACOS_CONFIG_USERNAME=nacos
+      - SPRING_CLOUD_NACOS_CONFIG_PASSWORD=nacos
+      # JVM配置
+      - JVM_XMS=512m
+      - JVM_XMX=512m
+      - TZ=Asia/Shanghai
+    ports:
+      - "20886:20885"  # Dubbo RPC端口
+      - "8088:8088"    # HTTP端口(管理端点)
+    volumes:
+      - /var/log/duda/tenant:/var/log/duda
+    networks:
+      - duda-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/actuator/health"]
+      timeout: 10s
+      retries: 5
+      interval: 30s
+      start_period: 60s
+
+networks:
+  duda-network:
+    external: true

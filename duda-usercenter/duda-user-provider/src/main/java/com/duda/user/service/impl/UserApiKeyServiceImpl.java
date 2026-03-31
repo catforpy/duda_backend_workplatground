@@ -44,6 +44,12 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
     @Autowired
     private ApiAesEncryptUtil apiAesEncryptUtil;
 
+    @Autowired
+    private com.duda.common.redis.RedisUtils redisUtils;
+
+    @Autowired
+    private com.duda.common.redis.key.ApiKeyRedisKeyBuilder apiKeyRedisKeyBuilder;
+
     @Override
     public UserApiKeyDTO addUserApiKey(AddUserApiKeyReqDTO request) {
         log.info("【用户API密钥】添加密钥: username={}", request.getUsername());
@@ -59,7 +65,8 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
             }
 
             Long userId = user.getId();
-            log.info("查询到用户: username={}, userId={}", request.getUsername(), userId);
+            Long tenantId = user.getTenantId();  // 获取租户ID
+            log.info("查询到用户: username={}, userId={}, tenantId={}", request.getUsername(), userId, tenantId);
 
             // 2. 设置默认值
             String keyName = StringUtils.hasText(request.getKeyName()) ?
@@ -99,6 +106,7 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
 
             // 7. 构建实体
             UserApiKey userApiKey = UserApiKey.builder()
+                    .tenantId(tenantId)  // 设置租户ID
                     .userId(userId)
                     .keyName(keyName)
                     .keyType(keyType)
@@ -125,7 +133,16 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
             log.info("✅ API密钥添加成功: id={}, keyName={}, isDefault={}",
                     userApiKey.getId(), userApiKey.getKeyName(), userApiKey.getIsDefault());
 
-            // 9. 返回DTO（不包含明文密钥）
+            // 9. 清除缓存（如果这是第一个密钥，会成为默认密钥）
+            String cacheKeyByUserId = apiKeyRedisKeyBuilder.buildDefaultApiKeyKey(userId);
+            redisUtils.delete(cacheKeyByUserId);
+
+            String cacheKeyByUsername = apiKeyRedisKeyBuilder.buildDefaultApiKeyByUsernameKey(request.getUsername());
+            redisUtils.delete(cacheKeyByUsername);
+
+            log.info("✅ 已清除API密钥缓存，userId:{}, username:{}", userId, request.getUsername());
+
+            // 10. 返回DTO（不包含明文密钥）
             return convertToDTO(userApiKey);
 
         } catch (Exception e) {
@@ -135,13 +152,13 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
     }
 
     @Override
-    public List<UserApiKeyDTO> listUserApiKeys(Long userId, Boolean includeInactive) {
-        log.info("【用户API密钥】查询密钥列表: userId={}, includeInactive={}",
-                userId, includeInactive);
+    public List<UserApiKeyDTO> listUserApiKeys(Long tenantId, Long userId, Boolean includeInactive) {
+        log.info("【用户API密钥】查询密钥列表: tenantId={}, userId={}, includeInactive={}",
+                tenantId, userId, includeInactive);
 
         try {
-            // 查询用户的所有密钥
-            List<UserApiKey> keys = userApiKeyMapper.selectByUserId(userId);
+            // 查询用户的所有密钥（按租户隔离）
+            List<UserApiKey> keys = userApiKeyMapper.selectByTenantIdAndUserId(tenantId, userId);
 
             // 过滤掉禁用的密钥（如果要求）
             if (includeInactive == null || !includeInactive) {
@@ -162,17 +179,32 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
     }
 
     @Override
-    public UserApiKeyDTO getDefaultUserApiKey(Long userId) {
-        log.info("【用户API密钥】查询默认密钥: userId={}", userId);
+    public UserApiKeyDTO getDefaultUserApiKey(Long tenantId, Long userId) {
+        log.info("【用户API密钥】查询默认密钥: tenantId={}, userId={}", tenantId, userId);
 
         try {
-            UserApiKey apiKey = userApiKeyMapper.selectDefaultByUserId(userId);
+            // 1. 先从缓存获取
+            String cacheKey = apiKeyRedisKeyBuilder.buildDefaultApiKeyKey(tenantId, userId);
+            UserApiKeyDTO cachedApiKey = redisUtils.get(cacheKey, UserApiKeyDTO.class);
+            if (cachedApiKey != null) {
+                log.info("✅ 缓存命中，默认API密钥，tenantId:{}, userId:{}", tenantId, userId);
+                return cachedApiKey;
+            }
+
+            // 2. 从数据库查询（按租户隔离）
+            UserApiKey apiKey = userApiKeyMapper.selectDefaultByTenantIdAndUserId(tenantId, userId);
             if (apiKey == null) {
                 log.warn("未找到默认密钥: userId={}", userId);
                 return null;
             }
 
-            return convertToDTO(apiKey);
+            UserApiKeyDTO apiKeyDTO = convertToDTO(apiKey);
+
+            // 3. 写入缓存（30分钟）
+            redisUtils.set(cacheKey, apiKeyDTO, 1800);
+            log.info("✅ 默认API密钥已缓存，userId:{}, keyId:{}", userId, apiKeyDTO.getId());
+
+            return apiKeyDTO;
 
         } catch (Exception e) {
             log.error("❌ 查询默认密钥失败: {}", e.getMessage(), e);
@@ -181,11 +213,11 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
     }
 
     @Override
-    public UserApiKeyDTO getUserApiKeyById(Long keyId) {
-        log.info("【用户API密钥】查询密钥详情（内部调用）: keyId={}", keyId);
+    public UserApiKeyDTO getUserApiKeyById(Long tenantId, Long keyId) {
+        log.info("【用户API密钥】查询密钥详情（内部调用）: tenantId={}, keyId={}", tenantId, keyId);
 
         try {
-            UserApiKey apiKey = userApiKeyMapper.selectById(keyId);
+            UserApiKey apiKey = userApiKeyMapper.selectByTenantIdAndId(tenantId, keyId);
             if (apiKey == null) {
                 log.warn("未找到密钥: keyId={}", keyId);
                 return null;
@@ -201,12 +233,12 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
     }
 
     @Override
-    public Boolean deleteUserApiKey(Long keyId, Long userId) {
-        log.info("【用户API密钥】删除密钥: keyId={}, userId={}", keyId, userId);
+    public Boolean deleteUserApiKey(Long tenantId, Long keyId, Long userId) {
+        log.info("【用户API密钥】删除密钥: tenantId={}, keyId={}, userId={}", tenantId, keyId, userId);
 
         try {
-            // 软删除
-            int rows = userApiKeyMapper.softDeleteById(keyId, userId, LocalDateTime.now());
+            // 软删除（按租户隔离）
+            int rows = userApiKeyMapper.softDeleteByTenantIdAndId(tenantId, keyId, userId, LocalDateTime.now());
 
             if (rows > 0) {
                 log.info("✅ API密钥删除成功: keyId={}", keyId);
@@ -223,15 +255,21 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
     }
 
     @Override
-    public Boolean setDefaultApiKey(Long keyId, Long userId) {
-        log.info("【用户API密钥】设置默认密钥: keyId={}, userId={}", keyId, userId);
+    public Boolean setDefaultApiKey(Long tenantId, Long keyId, Long userId) {
+        log.info("【用户API密钥】设置默认密钥: tenantId={}, keyId={}, userId={}", tenantId, keyId, userId);
 
         try {
-            // 设置默认密钥（会先取消其他默认密钥）
-            int rows = userApiKeyMapper.setDefaultKey(userId, keyId);
+            // 设置默认密钥（会先取消其他默认密钥，按租户隔离）
+            int rows = userApiKeyMapper.setDefaultKeyByTenantId(tenantId, userId, keyId);
 
             if (rows > 0) {
                 log.info("✅ 默认密钥设置成功: keyId={}", keyId);
+
+                // 清除缓存
+                String cacheKey = apiKeyRedisKeyBuilder.buildDefaultApiKeyKey(userId);
+                redisUtils.delete(cacheKey);
+                log.info("✅ 已清除默认API密钥缓存，userId:{}", userId);
+
                 return true;
             } else {
                 log.warn("密钥不存在或无权限: keyId={}, userId={}", keyId, userId);
@@ -245,18 +283,18 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
     }
 
     @Override
-    public Boolean updateApiKeyStatus(Long keyId, Long userId, Boolean active) {
-        log.info("【用户API密钥】更新密钥状态: keyId={}, userId={}, active={}",
-                keyId, userId, active);
+    public Boolean updateApiKeyStatus(Long tenantId, Long keyId, Long userId, Boolean active) {
+        log.info("【用户API密钥】更新密钥状态: tenantId={}, keyId={}, userId={}, active={}",
+                tenantId, keyId, userId, active);
 
         try {
-            UserApiKey apiKey = userApiKeyMapper.selectById(keyId);
+            UserApiKey apiKey = userApiKeyMapper.selectByTenantIdAndId(tenantId, keyId);
             if (apiKey == null) {
                 throw new RuntimeException("密钥不存在: " + keyId);
             }
 
-            // 权限验证
-            if (!apiKey.getUserId().equals(userId)) {
+            // 权限验证（检查租户和用户）
+            if (!apiKey.getTenantId().equals(tenantId) || !apiKey.getUserId().equals(userId)) {
                 throw new RuntimeException("无权限操作此密钥");
             }
 
@@ -314,6 +352,7 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
     private UserApiKeyDTO convertToDTO(UserApiKey entity) {
         return UserApiKeyDTO.builder()
                 .id(entity.getId())
+                .tenantId(entity.getTenantId())  // 设置租户ID
                 .userId(entity.getUserId())
                 .keyName(entity.getKeyName())
                 .keyType(entity.getKeyType())
@@ -375,10 +414,12 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
             }
 
             Long userId = user.getId();
-            log.info("查询到用户: username={}, userId={}", username, userId);
+            Long tenantId = user.getTenantId();
+            log.info("查询到用户: username={}, userId={}, tenantId={}", username, userId, tenantId);
 
             // 2. 构建请求DTO
             AddUserApiKeyReqDTO request = AddUserApiKeyReqDTO.builder()
+                    .tenantId(tenantId)  // 设置租户ID
                     .username(username)
                     .keyName(keyName)
                     .keyType(keyType)
@@ -400,7 +441,15 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
         log.info("【测试方法】根据用户名获取密钥: username={}", username);
 
         try {
-            // 1. 根据用户名查询用户ID
+            // 1. 先从缓存获取（根据username）
+            String cacheKey = apiKeyRedisKeyBuilder.buildDefaultApiKeyByUsernameKey(username);
+            UserApiKeyDTO cachedApiKey = redisUtils.get(cacheKey, UserApiKeyDTO.class);
+            if (cachedApiKey != null) {
+                log.info("✅ 缓存命中，默认API密钥，username:{}", username);
+                return cachedApiKey;
+            }
+
+            // 2. 根据用户名查询用户ID
             UserPO user = userMapper.selectOne(new LambdaQueryWrapper<UserPO>()
                     .eq(UserPO::getUsername, username)
                     .last("LIMIT 1"));
@@ -413,7 +462,7 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
             Long userId = user.getId();
             log.info("查询到用户: username={}, userId={}", username, userId);
 
-            // 2. 查询用户的默认密钥
+            // 3. 查询用户的默认密钥
             UserApiKey apiKey = userApiKeyMapper.selectDefaultByUserId(userId);
 
             if (apiKey == null) {
@@ -421,9 +470,14 @@ public class UserApiKeyServiceImpl implements UserApiKeyService {
                 return null;
             }
 
-            // 3. 返回解密后的密钥（测试用，包含明文）
-            log.info("✅ 找到密钥，开始解密...");
-            return convertToDTOWithPlainText(apiKey);
+            // 4. 转换为DTO（包含明文，测试用）
+            UserApiKeyDTO apiKeyDTO = convertToDTOWithPlainText(apiKey);
+
+            // 5. 写入缓存（30分钟）
+            redisUtils.set(cacheKey, apiKeyDTO, 1800);
+            log.info("✅ 默认API密钥已缓存，username:{}, keyId:{}", username, apiKeyDTO.getId());
+
+            return apiKeyDTO;
 
         } catch (Exception e) {
             log.error("❌ 根据用户名获取密钥失败: {}", e.getMessage(), e);

@@ -30,6 +30,8 @@ public class TokenInterceptorConfig implements WebMvcConfigurer {
                         "/api/auth/sms/**",          // 短信相关接口
                         "/api/auth/test/**",         // 测试接口
                         "/api/auth/v2/**",           // V2 认证接口（新）
+                        "/api/sms-login/**",        // 🔥 短信登录接口（测试时不需要认证）
+                        "/api/user-api-keys/**",     // 🔥 用户API密钥管理（测试时不需要认证）
                         "/swagger-ui/**",            // Swagger UI
                         "/swagger-resources/**",     // Swagger资源
                         "/v3/api-docs/**",           // API文档

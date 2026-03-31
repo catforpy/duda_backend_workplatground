@@ -26,6 +26,13 @@
             <version>1.0.0-SNAPSHOT</version>
         </dependency>
 
+        <!-- 短信服务 RPC -->
+        <dependency>
+            <groupId>com.duda</groupId>
+            <artifactId>duda-msg-interface</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+
         <!-- 依赖对应的接口模块 -->
         <dependency>
             <groupId>com.duda</groupId>

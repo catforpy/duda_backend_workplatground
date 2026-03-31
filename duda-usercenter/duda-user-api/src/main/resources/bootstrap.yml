@@ -45,13 +45,49 @@ dubbo:
   protocol:
     name: dubbo
     port: -1
-  registry:
-    address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
-    parameters:
-      namespace: ${NACOS_NAMESPACE:duda-dev}
-      group: USER_GROUP
-      use-as-config-center: false
-      use-as-metadata-center: false
+
+  # 配置多个 Registry - 支持跨分组访问
+  registries:
+    # Registry 1: 用户服务（USER_GROUP）- 默认 registry
+    userRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: USER_GROUP
+        use-as-config-center: false
+        use-as-metadata-center: false
+      default: true
+
+    # Registry 2: 短信服务（MSG_GROUP）- 支持跨分组访问
+    msgRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: MSG_GROUP
+        use-as-config-center: false
+        use-as-metadata-center: false
+      default: false
+
+    # Registry 3: 文件服务（FILE_GROUP）- 支持跨分组访问
+    fileRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: FILE_GROUP
+        use-as-config-center: false
+        use-as-metadata-center: false
+      default: false
+
+    # Registry 4: 公共服务（COMMON_GROUP）- 支持跨分组访问
+    commonRegistry:
+      address: nacos://${spring.cloud.nacos.server-addr}?username=${spring.cloud.nacos.username}&password=${spring.cloud.nacos.password}
+      parameters:
+        namespace: ${NACOS_NAMESPACE:duda-dev}
+        group: COMMON_GROUP
+        use-as-config-center: false
+        use-as-metadata-center: false
+      default: false
+
   consumer:
     check: false
     timeout: 5000
@@ -64,6 +100,8 @@ rocketmq:
     group: user-api-producer-group
     send-message-timeout: 3000
     retry-times-when-send-failed: 2
+    access-key: app_readwrite          # 新增
+    secret-key: ReadWrite@2024#Access  # 新增
 
 # ✅ 健康检查配置（Actuator）
 management:

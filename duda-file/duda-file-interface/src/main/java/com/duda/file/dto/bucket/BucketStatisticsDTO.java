@@ -1,7 +1,9 @@
 package com.duda.file.dto.bucket;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * Bucket用量统计DTO
@@ -11,6 +13,8 @@ import lombok.Data;
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class BucketStatisticsDTO implements java.io.Serializable {
 
     /**

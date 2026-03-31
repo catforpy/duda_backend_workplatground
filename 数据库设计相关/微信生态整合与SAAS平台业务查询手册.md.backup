@@ -1,0 +1,3476 @@
+# 微信生态整合与SAAS平台业务查询手册
+
+## 📋 文档版本信息
+
+- **版本**: v1.0
+- **创建时间**: 2026-03-22
+- **作者**: DudaNexus架构组
+- **适用范围**: 微信小程序代开发SAAS平台
+- **配套文档**: 《微信生态整合与SAAS平台数据库设计文档》
+
+---
+
+## 📚 目录
+
+1. [业务背景概述](#一业务背景概述)
+2. [微信ID体系详解](#二微信id体系详解)
+3. [核心数据结构设计](#三核心数据结构设计)
+4. [多表关联查询业务案例](#四多表关联查询业务案例)
+5. [扩展性设计](#五扩展性设计)
+6. [数据安全与加密](#六数据安全与加密)
+
+---
+
+## 一、业务背景概述
+
+### 1.1 平台定位
+
+**都达网（DudaNexus）** 是一个微信小程序代开发SAAS平台，提供以下核心能力：
+
+1. **小程序模板开发** - 为客户开发定制化小程序
+2. **小程序租赁业务** - 平台已有小程序资源租赁
+3. **资质合作模式** - 为无资质主体提供"套壳"服务
+4. **服务商子平台** - 授权服务商构建独立子平台
+
+### 1.2 用户角色体系
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    DudaNexus 平台                        │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│  │ 都达网账户   │  │ 服务商账户    │  │ 平台工作账户  │   │
+│  │             │  │              │  │              │   │
+│  │ - 购买模板   │  │ - 构建子平台  │  │ - 部门管理    │   │
+│  │ - 租赁小程序 │  │ - 服务客户    │  │ - 运营监控    │   │
+│  │ - 资质合作   │  │ - 付费授权    │  │ - 审核流程    │   │
+│  └─────────────┘  └──────────────┘  └──────────────┘   │
+│                          ↓                               │
+│                   ┌──────────────┐                       │
+│                   │  客户账户     │                       │
+│                   │              │                       │
+│                   │ - 小程序用户  │                       │
+│                   │ - 浏览下单   │                       │
+│                   │ - 支付分账   │                       │
+│                   └──────────────┘                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 二、微信ID体系详解
+
+### 2.1 核心概念对比表
+
+| ID类型 | 说明 | 唯一性范围 | 使用场景 | 获取方式 |
+|--------|------|-----------|---------|---------|
+| **AppID** | 应用唯一标识 | 每个应用独立 | 调用微信API、OAuth2.0授权 | 微信开放平台注册后获得 |
+| **AppSecret** | 应用密钥 | 每个应用独立 | 服务端调用微信接口 | 微信开放平台获得（需保密） |
+| **OpenID** | 用户在某个应用下的唯一标识 | 同一用户在不同应用下不同 | 识别用户在小程序内的身份 | 通过OAuth2.0授权获取 |
+| **UnionID** | 用户在同一开放平台下的统一标识 | 同一开放平台下所有应用统一 | 跨应用识别同一用户 | 需要绑定微信开放平台账号 |
+| **access_token** | 接口调用凭证 | 2小时有效期 | 调用微信API | 通过code换取 |
+| **refresh_token** | 刷新凭证 | 180天有效期 | 刷新access_token | OAuth2.0授权时获取 |
+
+### 2.2 ID体系关系图
+
+```
+微信开放平台账号（Company Account）
+    │
+    ├─ AppID: wx8888888888888888 (都达网开放平台)
+    │
+    ├─ 绑定的应用列表
+    │   │
+    │   ├─ 小程序A (AppID: wxaaaa1111)
+    │   │   └─ 用户张三的OpenID: oAAAAA_xxxxx
+    │   │   └─ 用户张三的UnionID: oUUUUU_12345 ← 同一个UnionID
+    │   │
+    │   ├─ 小程序B (AppID: wxbbbb2222)
+    │   │   └─ 用户张三的OpenID: oBBBBB_yyyyy ← 不同的OpenID
+    │   │   └─ 用户张三的UnionID: oUUUUU_12345 ← 但UnionID相同
+    │   │
+    │   ├─ 移动应用C (AppID: wxcccc3333)
+    │   │   └─ 用户张三的OpenID: oCCCCC_zzzzz
+    │   │   └─ 用户张三的UnionID: oUUUUU_12345
+    │   │
+    │   └─ 网站D (AppID: wxdddd4444)
+    │       └─ 用户张三的OpenID: oDDDDD_wwwww
+    │       └─ 用户张三的UnionID: oUUUUU_12345
+    │
+    └─ 关键价值：通过UnionID实现跨应用用户身份统一
+```
+
+### 2.3 OAuth2.0授权流程中的ID获取
+
+```
+用户点击"微信登录"
+    ↓
+前端拉起微信授权
+    ┌─────────────────────────────────────┐
+    │  SendAuth.Req req = new SendAuth.Req();  │
+    │  req.scope = "snsapi_userinfo";      │
+    │  req.state = "random_state";         │
+    └─────────────────────────────────────┘
+    ↓
+用户同意授权
+    ↓
+微信返回临时票据 code
+    ↓
+后端通过 code 调用微信接口
+    ┌─────────────────────────────────────┐
+    │ GET https://api.weixin.qq.com/...   │
+    │ ?appid=APPID                        │
+    │ &secret=SECRET                      │
+    │ &code=CODE                          │
+    │ &grant_type=authorization_code      │
+    └─────────────────────────────────────┘
+    ↓
+微信返回：
+{
+  "access_token": "ACCESS_TOKEN",
+  "expires_in": 7200,
+  "refresh_token": "REFRESH_TOKEN",
+  "openid": "OPENID",              ← 获取到OpenID
+  "scope": "snsapi_userinfo",
+  "unionid": "UNIONID"             ← 如果绑定开放平台，返回UnionID
+}
+    ↓
+使用 access_token 获取用户详细信息
+{
+  "openid": "OPENID",
+  "nickname": "张三",
+  "sex": 1,
+  "province": "广东",
+  "city": "深圳",
+  "country": "中国",
+  "headimgurl": "http://...",
+  "privilege": [],
+  "unionid": "UNIONID"            ← 再次确认UnionID
+}
+```
+
+---
+
+## 三、核心数据结构设计
+
+### 3.1 表分类总览
+
+```
+数据库表分类
+│
+├─ 1. 用户管理模块（User Management）
+│   ├─ users_XX (分片表) - 平台用户表
+│   ├─ user_profiles - 用户扩展信息
+│   ├─ user_wechat_binding - 微信绑定关系
+│   └─ user_auth_tokens - 登录凭证
+│
+├─ 2. 公司管理模块（Company Management）
+│   ├─ companies - 公司信息
+│   ├─ company_qualifications - 资质文件
+│   └─ company_service_providers - 服务商申请
+│
+├─ 3. 小程序管理模块（Mini Program Management）
+│   ├─ mini_programs - 小程序基本信息
+│   ├─ mini_program_templates - 小程序模板
+│   ├─ mini_program_development_tasks - 代开发任务
+│   ├─ mini_program_certification - 微信认证
+│   ├─ mini_program_filing - 小程序备案
+│   └─ mini_program_categories - 类目管理
+│
+├─ 4. 商户管理模块（Merchant Management）
+│   ├─ merchants - 商户信息
+│   ├─ merchant_users - 商户用户映射
+│   └─ merchant_contracts - 商户合同
+│
+├─ 5. 资源管理模块（Resource Management）
+│   ├─ user_oss_config - 用户OSS配置
+│   ├─ user_oss_statistics - OSS使用统计
+│   └─ user_resource_quota - 资源配额
+│
+├─ 6. 支付分账模块（Payment & Profit Sharing）
+│   ├─ payment_orders - 支付订单
+│   ├─ profit_sharing_rules - 分账规则
+│   ├─ profit_sharing_records - 分账记录
+│   └─ settlement_statements - 结算单据
+│
+├─ 7. 开放平台模块（Open Platform）
+│   ├─ open_api_keys - 开放API密钥
+│   ├─ api_call_logs - API调用日志
+│   └─ third_party_authorizations - 第三方授权
+│
+└─ 8. 系统管理模块（System Management）
+    ├─ roles - 角色表
+    ├─ permissions - 权限表
+    ├─ user_roles - 用户角色关联
+    ├─ role_permissions - 角色权限关联
+    └─ system_audit_logs - 系统审计日志
+```
+
+### 3.2 核心表结构设计
+
+#### 3.2.1 平台用户表（分片表）
+
+**表名**: `users_XX` (XX = 00-99)
+
+**分片规则**: `user_shard = user_id % 100`
+
+**设计要点**:
+- 支持水平分片，理论支持10亿+用户
+- 存储用户基础信息和微信ID
+- 支持多种用户类型（都达网账户、服务商账户、平台工作账户）
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键与基本信息** |
+| `id` | BIGINT | ✅ | 用户ID（雪花算法，全局唯一） |
+| `username` | VARCHAR(50) | ✅ | 用户名（唯一） |
+| `password` | VARCHAR(255) | ❌ | 密码（BCrypt加密，可选） |
+| `real_name` | VARCHAR(100) | ❌ | 真实姓名 |
+| `phone` | VARCHAR(20) | ❌ | 手机号（唯一） |
+| `email` | VARCHAR(100) | ❌ | 邮箱（唯一） |
+| `avatar` | VARCHAR(500) | ❌ | 头像URL |
+| **用户类型（核心字段）** |
+| `user_type` | VARCHAR(20) | ✅ | 用户类型: platform_admin/service_provider/platform_account/backend_admin/mini_program_user |
+| **微信相关ID（核心设计）** |
+| `wechat_openid` | VARCHAR(100) | ❌ | 微信OpenID（默认应用） |
+| `wechat_unionid` | VARCHAR(100) | ❌ | 微信UnionID（全局唯一，绑定开放平台后获取） |
+| `wechat_openid_list` | JSON | ❌ | 多OpenID存储（JSON格式），存储多个小程序/应用的OpenID |
+| **微信授权信息** |
+| `wechat_access_token` | VARCHAR(500) | ❌ | 微信access_token（AES加密） |
+| `wechat_refresh_token` | VARCHAR(500) | ❌ | 微信refresh_token（AES加密） |
+| `wechat_token_expire_time` | DATETIME | ❌ | access_token过期时间 |
+| `wechat_last_auth_time` | DATETIME | ❌ | 最后授权时间 |
+| **所属关系** |
+| `company_id` | BIGINT | ❌ | 所属公司ID（如果是公司账户） |
+| `service_provider_id` | BIGINT | ❌ | 所属服务商ID（如果是服务商子账户） |
+| `parent_user_id` | BIGINT | ❌ | 父账户ID（用于子账户场景） |
+| **状态管理** |
+| `status` | VARCHAR(20) | ✅ | 状态: active/inactive/suspended/deleted |
+| **审计字段** |
+| `register_ip` | VARCHAR(50) | ❌ | 注册IP |
+| `register_source` | VARCHAR(20) | ❌ | 注册来源: web/app/mini_program/api |
+| `last_login_time` | DATETIME | ❌ | 最后登录时间 |
+| `last_login_ip` | VARCHAR(50) | ❌ | 最后登录IP |
+| `deleted` | TINYINT | ✅ | 逻辑删除: 0-未删除 1-已删除 |
+| `create_time` | DATETIME | ✅ | 创建时间 |
+| `update_time` | DATETIME | ✅ | 更新时间 |
+| `create_by` | VARCHAR(50) | ❌ | 创建人 |
+| `update_by` | VARCHAR(50) | ❌ | 更新人 |
+
+**索引设计**:
+- 主键索引: `id`
+- 唯一索引: `username`, `phone`, `email`, `wechat_unionid`
+- 普通索引: `user_type`, `status`, `company_id`, `service_provider_id`, `create_time`
+
+**分表示例**:
+- `users_00` - 存储 user_id % 100 = 0 的用户
+- `users_01` - 存储 user_id % 100 = 1 的用户
+- ...
+- `users_99` - 存储 user_id % 100 = 99 的用户
+
+---
+
+#### 3.2.2 公司信息表
+
+**表名**: `companies`
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键与基本信息** |
+| `id` | BIGINT | ✅ | 公司ID（雪花算法） |
+| `company_name` | VARCHAR(200) | ✅ | 公司名称 |
+| `company_code` | VARCHAR(50) | ✅ | 公司编码（唯一） |
+| `company_short_name` | VARCHAR(100) | ❌ | 公司简称 |
+| **资质信息** |
+| `license_no` | VARCHAR(100) | ❌ | 营业执照号 |
+| `license_no_type` | VARCHAR(20) | ❌ | 证件类型: social_credit_code(18位)/organization_code(9位)/business_license(15位) |
+| `license_url` | VARCHAR(500) | ❌ | 营业执照图片URL |
+| `legal_person` | VARCHAR(100) | ❌ | 法人代表姓名 |
+| `legal_person_id` | VARCHAR(18) | ❌ | 法人身份证号 |
+| `legal_person_phone` | VARCHAR(20) | ❌ | 法人电话 |
+| `legal_person_wechat` | VARCHAR(100) | ❌ | 法人微信号（需绑定银行卡） |
+| **联系信息** |
+| `contact_person` | VARCHAR(100) | ❌ | 联系人 |
+| `contact_phone` | VARCHAR(20) | ❌ | 联系电话 |
+| `contact_email` | VARCHAR(100) | ❌ | 联系邮箱 |
+| **地址信息** |
+| `province` | VARCHAR(50) | ❌ | 省份 |
+| `city` | VARCHAR(50) | ❌ | 城市 |
+| `district` | VARCHAR(50) | ❌ | 区县 |
+| `address` | VARCHAR(255) | ❌ | 详细地址 |
+| **业务信息** |
+| `business_scope` | TEXT | ❌ | 经营范围 |
+| `industry` | VARCHAR(100) | ❌ | 所属行业 |
+| `company_type` | VARCHAR(20) | ✅ | 公司类型: service_provider/platform/merchant |
+| **服务商专属字段** |
+| `is_service_provider` | TINYINT | ✅ | 是否为服务商: 0-否 1-是 |
+| `service_provider_level` | VARCHAR(20) | ❌ | 服务商等级: platinum/gold/silver/normal |
+| `service_provider_expire_time` | DATETIME | ❌ | 服务商授权过期时间 |
+| `service_provider_fee_rate` | DECIMAL(5,2) | ✅ | 服务费抽成比例（0.10 = 10%） |
+| **微信小程序代开发相关** |
+| `wechat_open_platform_appid` | VARCHAR(100) | ❌ | 微信开放平台AppID（如果已绑定） |
+| `wechat_authorization_code` | VARCHAR(200) | ❌ | 第三方授权码（代注册时） |
+| **状态管理** |
+| `status` | VARCHAR(20) | ✅ | 状态: pending/active/suspended/deleted |
+| `audit_status` | VARCHAR(20) | ✅ | 审核状态: pending/approved/rejected |
+| `audit_time` | DATETIME | ❌ | 审核时间 |
+| `audit_by` | BIGINT | ❌ | 审核人ID |
+| `audit_remark` | VARCHAR(500) | ❌ | 审核备注 |
+| **时间信息** |
+| `registration_date` | DATE | ❌ | 注册日期 |
+| `remark` | VARCHAR(500) | ❌ | 备注 |
+| `deleted` | TINYINT | ✅ | 逻辑删除 |
+| `create_time` | DATETIME | ✅ | 创建时间 |
+| `update_time` | DATETIME | ✅ | 更新时间 |
+| `create_by` | VARCHAR(50) | ❌ | 创建人 |
+| `update_by` | VARCHAR(50) | ❌ | 更新人 |
+
+---
+
+#### 3.2.3 小程序信息表
+
+**表名**: `mini_programs`
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键与基本信息** |
+| `id` | BIGINT | ✅ | 小程序ID（雪花算法） |
+| `mini_program_name` | VARCHAR(200) | ✅ | 小程序名称 |
+| `mini_program_code` | VARCHAR(50) | ✅ | 小程序编码（唯一） |
+| `mini_program_short_name` | VARCHAR(100) | ❌ | 小程序简称 |
+| **微信配置（核心字段）** |
+| `wechat_appid` | VARCHAR(100) | ✅ | 微信小程序AppID（唯一） |
+| `wechat_appsecret` | VARCHAR(500) | ✅ | 微信小程序AppSecret（AES加密） |
+| `wechat_token` | VARCHAR(200) | ❌ | 微信消息加密Token |
+| `wechat_encoding_aes_key` | VARCHAR(500) | ❌ | 微信消息加密Key |
+| **所属关系** |
+| `owner_company_id` | BIGINT | ✅ | 所属公司ID |
+| `owner_user_id` | BIGINT | ✅ | 所属用户ID（公司管理员） |
+| `developer_company_id` | BIGINT | ❌ | 开发者公司ID（代开发模式） |
+| `developer_user_id` | BIGINT | ❌ | 开发者用户ID |
+| **业务模式（核心字段）** |
+| `business_mode` | VARCHAR(20) | ✅ | 业务模式: development/template/lease/cooperation |
+| **小程序模板信息** |
+| `template_id` | BIGINT | ❌ | 模板ID（如果使用模板） |
+| `template_name` | VARCHAR(200) | ❌ | 模板名称 |
+| `template_version` | VARCHAR(20) | ❌ | 模板版本 |
+| **小程序类型** |
+| `mini_program_type` | VARCHAR(20) | ✅ | 小程序类型: retail/catering/service/education/medical/other |
+| `industry` | VARCHAR(100) | ❌ | 所属行业 |
+| **小程序类目** |
+| `first_category` | VARCHAR(50) | ❌ | 一级类目 |
+| `second_category` | VARCHAR(50) | ❌ | 二级类目 |
+| `category_qualifications` | JSON | ❌ | 类目资质文件URL列表（JSON数组） |
+| **小程序展示信息** |
+| `logo` | VARCHAR(500) | ❌ | 小程序Logo |
+| `qrcode_url` | VARCHAR(500) | ❌ | 小程序二维码URL |
+| `description` | TEXT | ❌ | 小程序描述 |
+| `intro` | TEXT | ❌ | 小程序简介（微信后台） |
+| `service_content_types` | JSON | ❌ | 服务内容类型列表（JSON数组，备案用） |
+| **微信认证状态** |
+| `wechat_certified` | TINYINT | ✅ | 是否已微信认证: 0-否 1-是 |
+| `certification_status` | VARCHAR(20) | ✅ | 认证状态: none/pending/approved/rejected |
+| `certification_time` | DATETIME | ❌ | 认证时间 |
+| `certification_expire_time` | DATETIME | ❌ | 认证过期时间 |
+| **小程序备案状态** |
+| `filing_status` | VARCHAR(20) | ✅ | 备案状态: none/pending/approved/rejected/cancelled |
+| `filing_no` | VARCHAR(100) | ❌ | 备案号 |
+| `filing_time` | DATETIME | ❌ | 备案时间 |
+| **支付配置** |
+| `wechat_pay_enabled` | TINYINT | ✅ | 是否开通微信支付: 0-否 1-是 |
+| `wechat_pay_mch_id` | VARCHAR(100) | ❌ | 微信支付商户号 |
+| **服务器配置** |
+| `server_domain` | VARCHAR(200) | ❌ | 服务器域名 |
+| `socket_server_domain` | VARCHAR(200) | ❌ | Socket服务器域名 |
+| `upload_domain` | VARCHAR(200) | ❌ | 上传文件域名 |
+| `download_domain` | VARCHAR(200) | ❌ | 下载文件域名 |
+| `business_domain` | VARCHAR(200) | ❌ | 业务域名 |
+| **状态管理** |
+| `status` | VARCHAR(20) | ✅ | 状态: inactive/active/suspended/deleted |
+| `online_status` | VARCHAR(20) | ✅ | 上架状态: dev/review/online/offline |
+| **时间信息** |
+| `authorize_time` | DATETIME | ❌ | 授权时间 |
+| `expire_time` | DATE | ❌ | 授权过期时间（租赁模式） |
+| `last_publish_time` | DATETIME | ❌ | 最后发布时间 |
+| `remark` | VARCHAR(500) | ❌ | 备注 |
+| `deleted` | TINYINT | ✅ | 逻辑删除 |
+| `create_time` | DATETIME | ✅ | 创建时间 |
+| `update_time` | DATETIME | ✅ | 更新时间 |
+| `create_by` | VARCHAR(50) | ❌ | 创建人 |
+| `update_by` | VARCHAR(50) | ❌ | 更新人 |
+
+---
+
+#### 3.2.4 商户信息表
+
+**表名**: `merchants`
+
+**设计要点**: 核心表！存储所有商户（小程序）的基本信息、支付配置、分账规则
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键与基本信息** |
+| `id` | BIGINT | ✅ | 商户ID（雪花算法） |
+| `merchant_code` | VARCHAR(50) | ✅ | 商户编码（全局唯一，如：M001） |
+| `merchant_name` | VARCHAR(200) | ✅ | 商户名称 |
+| `merchant_short_name` | VARCHAR(100) | ❌ | 商户简称 |
+| `merchant_type` | VARCHAR(20) | ✅ | 商户类型: mini_program/app/web/h5/desktop |
+| **联系信息** |
+| `contact_person` | VARCHAR(100) | ❌ | 联系人姓名 |
+| `contact_phone` | VARCHAR(20) | ❌ | 联系人电话 |
+| `contact_email` | VARCHAR(100) | ❌ | 联系人邮箱 |
+| **公司信息** |
+| `company_id` | BIGINT | ❌ | 关联公司ID |
+| `company_name` | VARCHAR(200) | ❌ | 公司名称（冗余字段） |
+| **微信小程序配置** |
+| `mini_app_appid` | VARCHAR(100) | ❌ | 微信小程序AppID |
+| `mini_app_secret` | VARCHAR(500) | ❌ | 微信小程序AppSecret（AES加密） |
+| `mini_app_name` | VARCHAR(200) | ❌ | 小程序名称 |
+| **微信支付配置（核心）** |
+| `wechat_pay_mch_id` | VARCHAR(100) | ❌ | 微信支付商户号 |
+| `wechat_pay_api_key` | VARCHAR(500) | ❌ | 微信支付API密钥（AES加密） |
+| `wechat_pay_cert_path` | VARCHAR(500) | ❌ | 微信支付证书路径 |
+| **分账配置（核心）** |
+| `profit_sharing_enabled` | TINYINT | ✅ | 是否启用分账: 0-否 1-是 |
+| `profit_sharing_rate` | DECIMAL(5,2) | ✅ | 平台分账比例（0.10 = 10%） |
+| `settlement_cycle` | VARCHAR(20) | ✅ | 结算周期: T+0/T+1/T+7/M+1 |
+| **状态管理** |
+| `status` | VARCHAR(20) | ✅ | 状态: pending/active/suspended/deleted |
+| `audit_status` | VARCHAR(20) | ✅ | 审核状态: pending/approved/rejected |
+| **时间信息** |
+| `expire_time` | DATETIME | ❌ | 服务过期时间 |
+| `create_time` | DATETIME | ✅ | 创建时间 |
+| `update_time` | DATETIME | ✅ | 更新时间 |
+
+**关键索引**:
+- 唯一索引: `merchant_code`, `mini_app_appid`, `wechat_pay_mch_id`
+- 普通索引: `status`, `audit_status`, `company_id`
+
+---
+
+#### 3.2.5 商户用户映射表（核心设计！）
+
+**表名**: `merchant_users`
+
+**设计要点**:
+- 核心表！实现"一个用户，在不同商户有不同虚拟ID"的映射关系
+- 多租户SAAS模式的核心设计
+- 每个商户的用户数据完全隔离
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键** |
+| `id` | BIGINT | ✅ | 主键ID（雪花算法） |
+| **关联关系（核心）** |
+| `merchant_id` | BIGINT | ✅ | 商户ID（关联merchants表） |
+| `platform_user_id` | BIGINT | ✅ | 平台用户ID（关联users_XX表，全局唯一） |
+| `platform_user_shard` | TINYINT | ✅ | 平台用户分片ID（0-99） |
+| `merchant_user_id` | VARCHAR(50) | ✅ | 商户小程序内的用户ID（虚拟ID，如：M1001_001） |
+| **微信相关** |
+| `mini_app_openid` | VARCHAR(100) | ❌ | 该商户小程序的OpenID（每个商户不同） |
+| `mini_app_unionid` | VARCHAR(100) | ❌ | 微信UnionID（跨小程序唯一） |
+| `mini_app_session_key` | VARCHAR(500) | ❌ | 微信SessionKey（AES加密） |
+| **商户小程序内的用户信息** |
+| `nickname` | VARCHAR(50) | ❌ | 商户小程序内的昵称 |
+| `avatar` | VARCHAR(255) | ❌ | 商户小程序内的头像 |
+| `gender` | TINYINT | ❌ | 性别: 0-未知 1-男 2-女 |
+| **用户标签（商户自定义）** |
+| `user_tags` | VARCHAR(500) | ❌ | 用户标签（逗号分隔） |
+| `user_level` | VARCHAR(20) | ✅ | 用户等级: normal/vip/svip |
+| **访问统计** |
+| `visit_count` | INT | ✅ | 访问次数 |
+| `order_count` | INT | ✅ | 订单数量 |
+| `consumption_amount` | DECIMAL(10,2) | ✅ | 消费金额（元） |
+| `last_visit_time` | DATETIME | ❌ | 最后访问时间 |
+| **状态管理** |
+| `status` | TINYINT | ✅ | 状态: 1-正常 2-禁用 3-已删除 |
+| **时间信息** |
+| `bind_time` | DATETIME | ✅ | 绑定时间（用户首次访问该商户小程序） |
+| `create_time` | DATETIME | ✅ | 创建时间 |
+| `update_time` | DATETIME | ✅ | 更新时间 |
+
+**关键索引**:
+- 唯一索引: `(merchant_id, merchant_user_id)`, `(merchant_id, mini_app_openid)`
+- 普通索引: `platform_user_id`, `mini_app_unionid`, `status`
+
+---
+
+#### 3.2.6 小程序代开发任务表
+
+**表名**: `mini_program_development_tasks`
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键与关联信息** |
+| `id` | BIGINT | ✅ | 任务ID（雪花算法） |
+| `mini_program_id` | BIGINT | ❌ | 小程序ID（完成后关联） |
+| `client_company_id` | BIGINT | ✅ | 客户公司ID |
+| `client_user_id` | BIGINT | ✅ | 客户用户ID |
+| `developer_company_id` | BIGINT | ✅ | 开发者公司ID（平台或服务商） |
+| **任务基本信息** |
+| `task_no` | VARCHAR(50) | ✅ | 任务编号（唯一） |
+| `task_name` | VARCHAR(200) | ✅ | 任务名称 |
+| `task_type` | VARCHAR(20) | ✅ | 任务类型: register/develop/certify/file/all |
+| `task_status` | VARCHAR(20) | ✅ | 任务状态: pending/in_progress/completed/failed/cancelled |
+| **当前步骤** |
+| `current_step` | VARCHAR(50) | ❌ | 当前步骤: basic_info/name_audit/certification/filing/development/testing/launch |
+| **微信注册信息** |
+| `wechat_appid` | VARCHAR(100) | ❌ | 获得的小程序AppID |
+| `wechat_enterprise_name` | VARCHAR(200) | ❌ | 企业名称 |
+| `wechat_legal_person_wechat` | VARCHAR(100) | ❌ | 法人微信号 |
+| **小程序名称** |
+| `mini_program_name` | VARCHAR(200) | ❌ | 小程序名称 |
+| `mini_program_name_status` | VARCHAR(20) | ❌ | 名称审核状态 |
+| **进度信息** |
+| `progress_percent` | INT | ✅ | 进度百分比（0-100） |
+| `estimated_finish_time` | DATETIME | ❌ | 预计完成时间 |
+| **费用信息** |
+| `total_fee` | DECIMAL(10,2) | ✅ | 总费用（元） |
+| `paid_fee` | DECIMAL(10,2) | ✅ | 已付费用（元） |
+| **时间信息** |
+| `start_time` | DATETIME | ❌ | 开始时间 |
+| `finish_time` | DATETIME | ❌ | 完成时间 |
+| `create_time` | DATETIME | ✅ | 创建时间 |
+| `update_time` | DATETIME | ✅ | 更新时间 |
+
+---
+
+#### 3.2.7 支付订单表
+
+**表名**: `payment_orders`
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键与订单信息** |
+| `id` | BIGINT | ✅ | 订单ID（雪花算法） |
+| `order_no` | VARCHAR(50) | ✅ | 订单编号（唯一） |
+| `transaction_id` | VARCHAR(50) | ❌ | 微信支付交易号 |
+| **关联信息** |
+| `mini_program_id` | BIGINT | ✅ | 小程序ID |
+| `merchant_id` | BIGINT | ✅ | 商户ID（merchants表） |
+| `merchant_user_id` | BIGINT | ✅ | 商户用户ID（merchant_users表） |
+| `platform_user_id` | BIGINT | ✅ | 平台用户ID |
+| `platform_user_shard` | TINYINT | ✅ | 平台用户分片ID |
+| **订单信息** |
+| `order_type` | VARCHAR(20) | ✅ | 订单类型 |
+| `order_amount` | DECIMAL(10,2) | ✅ | 订单金额（元） |
+| `actual_payment_amount` | DECIMAL(10,2) | ✅ | 实际支付金额（元） |
+| **支付信息** |
+| `payment_method` | VARCHAR(20) | ✅ | 支付方式: wechat_pay/alipay/balance |
+| `payment_status` | VARCHAR(20) | ✅ | 支付状态: unpaid/paying/paid/refunded/cancelled |
+| **分账信息（核心）** |
+| `profit_sharing_enabled` | TINYINT | ✅ | 是否需要分账: 0-否 1-是 |
+| `profit_sharing_status` | VARCHAR(20) | ✅ | 分账状态: pending/processing/completed/failed |
+| `profit_sharing_rules` | JSON | ❌ | 分账规则（JSON格式） |
+| **时间信息** |
+| `order_time` | DATETIME | ✅ | 下单时间 |
+| `payment_time` | DATETIME | ❌ | 支付时间 |
+| `profit_sharing_time` | DATETIME | ❌ | 分账时间 |
+| `create_time` | DATETIME | ✅ | 创建时间 |
+| `update_time` | DATETIME | ✅ | 更新时间 |
+
+---
+
+#### 3.2.8 用户OSS配置表
+
+**表名**: `user_oss_config`
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键与关联信息** |
+| `id` | BIGINT | ✅ | 配置ID（雪花算法） |
+| `user_id` | BIGINT | ✅ | 用户ID |
+| `user_shard` | TINYINT | ✅ | 用户分片ID |
+| `bucket_name` | VARCHAR(100) | ✅ | Bucket名称（关联bucket_config表） |
+| **OSS配置** |
+| `storage_type` | VARCHAR(20) | ✅ | 存储类型: aliyun_oss/tencent_cos/qiniu_kodo/minio |
+| **配额管理** |
+| `max_storage_size` | BIGINT | ❌ | 最大存储容量（字节） |
+| `max_file_count` | INT | ❌ | 最大文件数量 |
+| **当前用量** |
+| `current_storage_size` | BIGINT | ✅ | 当前已用存储（字节） |
+| `current_file_count` | INT | ✅ | 当前文件数量 |
+| **费用信息** |
+| `billing_mode` | VARCHAR(20) | ✅ | 计费模式: pay_as_you_go/package/free |
+| **状态管理** |
+| `status` | VARCHAR(20) | ✅ | 状态: active/suspended/expired |
+| **时间信息** |
+| `expire_time` | DATETIME | ❌ | 过期时间（NULL表示永久） |
+| `create_time` | DATETIME | ✅ | 创建时间 |
+| `update_time` | DATETIME | ✅ | 更新时间 |
+
+---
+
+#### 3.2.9 开放API密钥表
+
+**表名**: `open_api_keys`
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键与基本信息** |
+| `id` | BIGINT | ✅ | 主键ID（雪花算法） |
+| `app_id` | VARCHAR(50) | ✅ | 应用ID（全局唯一） |
+| `app_secret` | VARCHAR(128) | ✅ | 应用密钥（SHA256加密存储） |
+| `app_name` | VARCHAR(200) | ✅ | 应用名称 |
+| **应用类型** |
+| `app_type` | VARCHAR(20) | ✅ | 应用类型: backend/frontend/third_party/mobile |
+| **权限控制** |
+| `permissions` | JSON | ❌ | 权限列表（JSON格式） |
+| **限流配置** |
+| `rate_limit_per_second` | INT | ✅ | 每秒请求次数限制 |
+| `rate_limit_per_minute` | INT | ✅ | 每分钟请求次数限制 |
+| **访问统计** |
+| `total_requests` | BIGINT | ✅ | 总请求次数 |
+| `success_requests` | BIGINT | ✅ | 成功请求次数 |
+| **状态管理** |
+| `status` | TINYINT | ✅ | 状态: 0-禁用 1-启用 2-审核中 |
+| **时间信息** |
+| `expire_time` | DATETIME | ❌ | 过期时间（NULL表示永不过期） |
+| `create_time` | DATETIME | ✅ | 创建时间 |
+| `update_time` | DATETIME | ✅ | 更新时间 |
+
+---
+
+#### 3.2.10 API调用日志表
+
+**表名**: `api_call_logs`
+
+| 字段名称 | 数据类型 | 必填 | 说明 |
+|---------|---------|------|------|
+| **主键与关联信息** |
+| `id` | BIGINT | ✅ | 主键ID（雪花算法） |
+| `app_id` | VARCHAR(50) | ✅ | 应用ID |
+| `request_id` | VARCHAR(50) | ✅ | 请求ID（全局唯一） |
+| **请求信息** |
+| `request_method` | VARCHAR(10) | ✅ | 请求方法: GET/POST/PUT/DELETE |
+| `request_path` | VARCHAR(500) | ✅ | 请求路径 |
+| `request_params` | TEXT | ❌ | 请求参数（JSON格式） |
+| **响应信息** |
+| `response_status` | INT | ✅ | HTTP状态码 |
+| `response_body` | TEXT | ❌ | 响应体（JSON格式） |
+| `response_time` | INT | ❌ | 响应时间（毫秒） |
+| **客户端信息** |
+| `client_ip` | VARCHAR(50) | ❌ | 客户端IP |
+| `user_agent` | VARCHAR(500) | ❌ | User-Agent |
+| **结果信息** |
+| `call_result` | VARCHAR(20) | ✅ | 调用结果: success/failed/error |
+| **时间信息** |
+| `request_time` | DATETIME | ✅ | 请求时间 |
+| `response_time` | DATETIME | ❌ | 响应时间 |
+
+---
+
+## 四、多表关联查询业务案例
+
+### 4.1 案例一：平台首页数据展示
+
+#### 业务场景
+
+平台管理员登录后台，首页需要展示以下数据概览：
+
+1. **平台整体数据**
+   - 总用户数
+   - 总公司数
+   - 总小程序数
+   - 总订单数
+   - 今日新增用户
+   - 今日新增订单
+   - 今日交易额
+
+2. **待办事项**
+   - 待审核公司数
+   - 待审核小程序数
+   - 待分账订单数
+   - 代开发任务进行中数量
+
+3. **最新动态**
+   - 最新注册用户（10条）
+   - 最新订单（10条）
+   - 最新代开发任务（10条）
+
+#### 涉及的表
+
+```
+users_XX (分片表)
+├─ 查询条件: status = 'active', deleted = 0
+└─ 统计: COUNT(*), COUNT(today)
+
+companies
+├─ 查询条件: status != 'deleted', deleted = 0
+└─ 统计: COUNT(*), COUNT(audit_status = 'pending')
+
+mini_programs
+├─ 查询条件: status != 'deleted', deleted = 0
+└─ 统计: COUNT(*), COUNT(audit_status = 'pending')
+
+payment_orders
+├─ 查询条件: payment_status = 'paid'
+└─ 统计: COUNT(*), SUM(order_amount), COUNT(today)
+
+mini_program_development_tasks
+├─ 查询条件: task_status = 'in_progress'
+└─ 统计: COUNT(*)
+
+merchant_users
+└─ 统计: COUNT(DISTINCT platform_user_id)
+```
+
+#### 查询逻辑分解
+
+##### 步骤1: 统计总用户数和今日新增用户
+
+**逻辑说明**:
+- 用户表分片在100张表中（users_00 到 users_99）
+- 需要分别统计每张表，然后汇总
+- 今日新增用户: `create_time >= 今天00:00:00`
+
+**查询步骤**:
+
+**第1步：遍历所有用户表（users_00 到 users_99）**
+
+每张表的查询逻辑：
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | users_00, users_01, ..., users_99（共100张表） |
+| 查询内容1 | 统计总用户数（状态为"正常"且未删除） |
+| 查询内容2 | 统计今日新增用户数（创建时间在今天且状态正常） |
+| 筛选条件 | status='active'（正常状态） AND deleted=0（未删除） |
+| 时间条件 | create_time >= 今天00:00:00 |
+
+**第2步：汇总所有表的结果**
+
+```
+总用户数 = 100张表的用户数相加
+今日新增用户 = 100张表的今日新增用户数相加
+```
+
+**返回结果示例**:
+```json
+{
+  "total_users": 158000,
+  "new_users_today": 328
+}
+```
+
+##### 步骤2: 统计总公司数和待审核公司数
+
+**逻辑说明**:
+- 公司表不分表，直接查询
+- 待审核公司: `audit_status = 'pending'`
+
+**查询逻辑**：
+
+**查询1：总公司数**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | companies（公司表） |
+| 筛选条件 | deleted=0（未删除） AND status IN ('pending', 'active', 'suspended') |
+| 统计内容 | 符合条件的公司总数 |
+
+**查询2：待审核公司数**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | companies（公司表） |
+| 筛选条件 | deleted=0（未删除） AND audit_status='pending'（待审核） |
+| 统计内容 | 符合条件的待审核公司数 |
+
+**返回结果示例**:
+```json
+{
+  "total_companies": 2580,
+  "pending_audit_companies": 15
+}
+```
+
+##### 步骤3: 统计总小程序数和待审核小程序数
+
+**逻辑说明**:
+- 小程序表：状态字段有两个维度
+  - `status`: inactive/active/suspended/deleted
+  - `online_status`: dev/review/online/offline
+
+**查询逻辑**：
+
+**查询1：总小程序数**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | mini_programs（小程序表） |
+| 筛选条件 | deleted=0（未删除） |
+| 统计内容 | 所有小程序总数 |
+
+**查询2：待审核小程序数（微信审核中）**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | mini_programs（小程序表） |
+| 筛选条件 | deleted=0 AND online_status='review'（审核中） |
+| 统计内容 | 正在审核中的小程序数量 |
+
+**查询3：认证待审核**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | mini_programs（小程序表） |
+| 筛选条件 | deleted=0 AND certification_status='pending' |
+| 统计内容 | 待认证的小程序数量 |
+
+**查询4：备案待审核**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | mini_programs（小程序表） |
+| 筛选条件 | deleted=0 AND filing_status='pending' |
+| 统计内容 | 待备案的小程序数量 |
+
+**返回结果示例**:
+```json
+{
+  "total_mini_programs": 8650,
+  "pending_review_mini_programs": 28,
+  "pending_certification": 45,
+  "pending_filing": 67
+}
+```
+
+##### 步骤4: 统计订单数据
+
+**逻辑说明**:
+- 订单表可能按时间分片（payment_orders_202601, payment_orders_202602, ...）
+- 今日订单需要查询当月分片表
+
+**查询逻辑**：
+
+**查询1：总订单数**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | payment_orders_202603（当月订单表） |
+| 筛选条件 | payment_status='paid'（已支付） |
+| 统计内容 | 符合条件的订单总数 |
+
+**查询2：今日订单数**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | payment_orders_202603（当月订单表） |
+| 筛选条件 | payment_status='paid' AND order_time >= 今天00:00:00 |
+| 统计内容 | 今天已支付订单数量 |
+
+**查询3：今日交易额**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | payment_orders_202603（当月订单表） |
+| 筛选条件 | payment_status='paid' AND order_time >= 今天00:00:00 |
+| 统计字段 | actual_payment_amount（实付金额） |
+| 统计内容 | 所有订单的实付金额相加 |
+
+**查询4：待分账订单数**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | payment_orders_202603（当月订单表） |
+| 筛选条件 | payment_status='paid' AND profit_sharing_enabled=1 AND profit_sharing_status='pending' |
+| 统计内容 | 等待分账的订单数量 |
+
+**返回结果示例**:
+```json
+{
+  "total_orders": 528000,
+  "orders_today": 3250,
+  "transaction_amount_today": 158620.50,
+  "pending_profit_sharing_orders": 182
+}
+```
+
+##### 步骤5: 统计代开发任务
+
+**查询逻辑**：
+
+**查询1：进行中的任务数**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | mini_program_development_tasks（代开发任务表） |
+| 筛选条件 | task_status='in_progress'（进行中） |
+| 统计内容 | 正在开发的任务数量 |
+
+**查询2：待客户确认的任务数**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | mini_program_development_tasks（代开发任务表） |
+| 筛选条件 | task_status='waiting_client_approval'（待客户确认） |
+| 统计内容 | 等待客户确认的任务数量 |
+
+**查询3：等待微信审核的任务数**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | mini_program_development_tasks（代开发任务表） |
+| 筛选条件 | task_status='waiting_wechat_audit'（等待微信审核） |
+| 统计内容 | 正在审核中的任务数量 |
+
+**返回结果示例**:
+```json
+{
+  "tasks_in_progress": 85,
+  "tasks_waiting_client": 23,
+  "tasks_waiting_wechat_audit": 34
+}
+```
+
+##### 步骤6: 查询最新动态
+
+**查询6.1: 最新注册用户**
+
+**查询逻辑**：
+
+**第1步：从每张用户表查询最新10条**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | users_00, users_01, ..., users_99（共100张表） |
+| 筛选条件 | deleted=0（未删除） |
+| 排序方式 | 按create_time降序（最新注册的在前） |
+| 返回字段 | id, username, real_name, phone, user_type, register_source, create_time |
+| 取值数量 | 每张表取前10条 |
+
+**第2步：合并所有表的结果**
+
+- 把100张表查询到的10×100=1000条记录合并
+- 按create_time降序重新排序
+- 取最新的10条
+
+**第3步：关联查询公司信息**
+
+| 查询项 | 说明 |
+|-------|------|
+| 关联表 | companies（公司表） |
+| 关联方式 | LEFT JOIN（左连接） |
+| 关联条件 | users_XX.company_id = companies.id |
+| 获取字段 | company_name（公司名称） |
+
+**返回结果示例**:
+```json
+{
+  "latest_users": [
+    {
+      "user_id": 1234567890,
+      "username": "zhangsan001",
+      "real_name": "张三",
+      "phone": "139****0000",
+      "user_type": "platform_account",
+      "company_name": "深圳某某科技有限公司",
+      "register_source": "web",
+      "create_time": "2026-03-22 15:30:00"
+    },
+    // ... 共10条
+  ]
+}
+```
+
+**查询6.2: 最新订单**
+
+**查询逻辑**：
+
+**主查询表：payment_orders_202603（订单表）**
+
+**关联查询4张表**：
+
+| 关联顺序 | 关联表 | 关联目的 | 关联方式 |
+|---------|--------|---------|---------|
+| 1 | mini_programs（小程序表） | 获取小程序名称 | 通过mini_program_id关联 |
+| 2 | merchants（商户表） | 获取商户名称 | 通过merchant_id关联 |
+| 3 | merchant_users（商户用户表） | 获取用户昵称 | 通过merchant_user_id关联 |
+
+**查询条件与返回字段**：
+
+| 查询项 | 说明 |
+|-------|------|
+| 主表 | payment_orders_202603（当月订单表） |
+| 筛选条件 | deleted=0（未删除） |
+| 排序方式 | 按order_time降序（最新订单在前） |
+| 取值数量 | 前10条 |
+| 返回字段 | order_no（订单号）、order_amount（订单金额）、actual_payment_amount（实付金额）、payment_status（支付状态）、order_time（下单时间）、mini_program_name（小程序名称）、merchant_name（商户名称）、nickname（用户昵称） |
+```
+
+**返回结果示例**:
+```json
+{
+  "latest_orders": [
+    {
+      "order_no": "ORD202603221530001",
+      "order_amount": 299.00,
+      "actual_payment_amount": 299.00,
+      "payment_status": "paid",
+      "order_time": "2026-03-22 15:30:00",
+      "mini_program_name": "某餐饮小程序",
+      "merchant_name": "测试商户A",
+      "user_nickname": "张三"
+    },
+    // ... 共10条
+  ]
+}
+```
+
+**查询6.3: 最新代开发任务**
+
+**查询逻辑**：
+
+**主查询表：mini_program_development_tasks（代开发任务表）**
+
+**关联查询3张表**：
+
+| 关联顺序 | 关联表 | 关联目的 | 关联方式 |
+|---------|--------|---------|---------|
+| 1 | companies（客户公司表） | 获取客户公司名称 | 通过client_company_id关联 |
+| 2 | companies（开发者公司表） | 获取开发者公司名称 | 通过developer_company_id关联 |
+| 3 | mini_programs（小程序表） | 获取小程序名称和AppID | 通过mini_program_id关联 |
+
+**查询条件与返回字段**：
+
+| 查询项 | 说明 |
+|-------|------|
+| 主表 | mini_program_development_tasks（代开发任务表） |
+| 筛选条件 | deleted=0（未删除） |
+| 排序方式 | 按create_time降序（最新任务在前） |
+| 取值数量 | 前10条 |
+| 返回字段 | task_no（任务编号）、task_name（任务名称）、task_status（任务状态）、current_step（当前步骤）、progress_percent（进度百分比）、create_time（创建时间）、client_company_name（客户公司名称）、developer_company_name（开发者公司名称）、mini_program_name（小程序名称）、wechat_appid（微信AppID） |
+```
+
+**返回结果示例**:
+```json
+{
+  "latest_development_tasks": [
+    {
+      "task_no": "TASK20260322001",
+      "task_name": "为深圳某餐饮公司开发小程序",
+      "task_status": "in_progress",
+      "current_step": "filing",
+      "progress_percent": 65,
+      "create_time": "2026-03-22 10:00:00",
+      "client_company_name": "深圳某某餐饮公司",
+      "developer_company_name": "都达网（平台）",
+      "mini_program_name": "某餐饮小程序",
+      "wechat_appid": "wxabcd1234"
+    },
+    // ... 共10条
+  ]
+}
+```
+
+#### 最终首页数据展示
+
+**页面布局示例**:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    都达网管理后台                         │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ┌───────────────┐  ┌───────────────┐  ┌──────────────┐│
+│  │  总用户数      │  │  总公司数      │  │  总小程序数    ││
+│  │  158,000      │  │  2,580        │  │  8,650        ││
+│  │  +328今日     │  │  15待审核     │  │  28待审核     ││
+│  └───────────────┘  └───────────────┘  └──────────────┘│
+│                                                         │
+│  ┌───────────────┐  ┌───────────────┐  ┌──────────────┐│
+│  │  总订单数      │  │  今日交易额    │  │  待分账订单   ││
+│  │  528,000      │  │  ¥158,620.50  │  │  182          ││
+│  │  +3,250今日   │  │               │  │              ││
+│  └───────────────┘  └───────────────┘  └──────────────┘│
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │  待办事项                                        │  │
+│  │  • 15个公司待审核                                │  │
+│  │  • 28个小程序待审核（微信审核中）                │  │
+│  │  • 45个小程序待认证                              │  │
+│  │  • 67个小程序待备案                              │  │
+│  │  • 182个订单待分账                               │  │
+│  │  • 85个代开发任务进行中                          │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │  最新注册用户                    [查看更多 →]     │  │
+│  │  1. 张三 - 深圳某某科技有限公司 - 15:30          │  │
+│  │  2. 李四 - 广州某零售公司 - 14:25               │  │
+│  │  ...                                            │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │  最新订单                        [查看更多 →]     │  │
+│  │  1. ¥299.00 - 某餐饮小程序 - 测试商户A - 15:30  │  │
+│  │  2. ¥158.00 - 某零售小程序 - 测试商户B - 14:20  │  │
+│  │  ...                                            │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │  最新代开发任务                   [查看更多 →]     │  │
+│  │  1. 为深圳某餐饮公司开发小程序 - 备案中 - 65%    │  │
+│  │  2. 为广州某零售公司开发小程序 - 认证中 - 40%   │  │
+│  │  ...                                            │  │
+│  └─────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4.2 案例二：小程序A查询自己的客户
+
+#### 业务场景
+
+**角色**: 商户（小程序A）的管理员
+
+**需求**:
+- 小程序A的管理员登录后台
+- 查看小程序A的所有客户列表
+- 支持分页、筛选、排序
+- 支持查看客户详情（订单、消费金额等）
+
+#### 数据视角
+
+**多租户隔离核心**:
+- 小程序A有自己独立的客户ID体系（merchant_user_id）
+- 比如用户张三在小程序A的ID是 `M1001_001`
+- 但张三在小程序B的ID是 `M1002_001`
+- 两个小程序看到的客户列表完全不同
+
+#### 涉及的表
+
+```
+merchant_users (主查询表)
+├─ 查询条件: merchant_id = 1001 (小程序A的ID)
+├─ 关联查询: users_XX (获取平台用户信息)
+└─ 统计数据: payment_orders (订单统计)
+```
+
+#### 查询逻辑分解
+
+##### 步骤1: 查询小程序A的客户列表（分页）
+
+**逻辑说明**:
+- 主查询表: `merchant_users`
+- 筛选条件: `merchant_id = 1001` AND `status = 1` (正常)
+- 排序: 按绑定时间降序、消费金额降序
+- 分页: 每页20条
+
+**查询条件**:
+```
+表: merchant_users
+
+WHERE merchant_id = 1001
+  AND status = 1
+  AND deleted = 0
+
+ORDER BY
+  bind_time DESC,  -- 最新绑定的用户在前
+  consumption_amount DESC  -- 消费金额高的在前
+
+LIMIT 20 OFFSET 0  -- 第1页
+```
+
+**返回字段**:
+```
+merchant_users表:
+- id
+- merchant_user_id (商户用户ID，如: M1001_001)
+- platform_user_id (平台用户ID)
+- platform_user_shard (用户分片ID)
+- nickname (昵称)
+- avatar (头像)
+- user_level (用户等级: normal/vip/svip)
+- user_tags (用户标签)
+- visit_count (访问次数)
+- order_count (订单数量)
+- consumption_amount (消费金额)
+- bind_time (绑定时间)
+- last_visit_time (最后访问时间)
+
+需要关联查询users_XX表:
+- phone (手机号，脱敏: 139****0000)
+- real_name (真实姓名，可选)
+```
+
+**返回结果示例**:
+```json
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "total": 1528,  // 总客户数
+    "page": 1,
+    "page_size": 20,
+    "customers": [
+      {
+        "merchant_user_id": "M1001_001",
+        "platform_user_id": 1234567890,
+        "nickname": "张三",
+        "avatar": "https://cdn.example.com/avatar/123.jpg",
+        "user_level": "vip",
+        "user_tags": "老客户,高消费",
+        "phone": "139****0000",
+        "real_name": "张*",
+        "visit_count": 58,
+        "order_count": 12,
+        "consumption_amount": 2580.00,
+        "bind_time": "2026-01-15 10:30:00",
+        "last_visit_time": "2026-03-22 15:30:00"
+      },
+      {
+        "merchant_user_id": "M1001_002",
+        "platform_user_id": 1234567891,
+        "nickname": "李四",
+        "avatar": "https://cdn.example.com/avatar/456.jpg",
+        "user_level": "normal",
+        "user_tags": "新客户",
+        "phone": "138****0000",
+        "real_name": null,
+        "visit_count": 5,
+        "order_count": 1,
+        "consumption_amount": 158.00,
+        "bind_time": "2026-03-20 14:20:00",
+        "last_visit_time": "2026-03-21 10:15:00"
+      },
+      // ... 共20条
+    ]
+  }
+}
+```
+
+##### 步骤2: 查询客户详情
+
+**业务场景**: 点击某个客户，查看详细信息
+
+**涉及表**:
+```
+merchant_users (主表)
+├─ 基本信息
+├─ 访问统计
+└─ 用户标签
+
+users_XX (分片表)
+├─ 手机号、邮箱
+├─ 真实姓名
+└─ 注册时间
+
+payment_orders (订单表)
+├─ 订单历史
+├─ 消费金额统计
+└─ 最近订单
+```
+
+**查询逻辑**:
+```
+步骤1: 查询客户基本信息
+表: merchant_users
+WHERE merchant_id = 1001
+  AND merchant_user_id = 'M1001_001'
+
+步骤2: 关联查询平台用户信息
+表: users_XX (根据platform_user_shard定位)
+WHERE id = 1234567890
+
+关联字段:
+- phone (手机号，脱敏)
+- email (邮箱，脱敏)
+- real_name (真实姓名)
+- register_time (注册时间)
+- user_type (用户类型)
+
+步骤3: 统计订单数据
+表: payment_orders_202603 (按月分片)
+WHERE merchant_id = 1001
+  AND merchant_user_id = 对应ID
+  AND payment_status = 'paid'
+
+统计数据:
+- COUNT(*) - 总订单数
+- SUM(actual_payment_amount) - 总消费金额
+- MIN(order_time) - 首次下单时间
+- MAX(order_time) - 最后下单时间
+```
+
+**返回结果示例**:
+```json
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "merchant_user_id": "M1001_001",
+    "platform_user_id": 1234567890,
+    "basic_info": {
+      "nickname": "张三",
+      "avatar": "https://cdn.example.com/avatar/123.jpg",
+      "gender": 1,
+      "province": "广东",
+      "city": "深圳",
+      "user_level": "vip",
+      "user_tags": "老客户,高消费",
+      "user_remark": "优质客户，推荐给朋友",
+      "bind_time": "2026-01-15 10:30:00"
+    },
+    "contact_info": {
+      "phone": "139****0000",
+      "email": "zha****@example.com",
+      "real_name": "张*"
+    },
+    "visit_statistics": {
+      "visit_count": 58,
+      "first_visit_time": "2026-01-15 10:30:00",
+      "last_visit_time": "2026-03-22 15:30:00"
+    },
+    "order_statistics": {
+      "total_orders": 12,
+      "total_consumption": 2580.00,
+      "avg_order_amount": 215.00,
+      "first_order_time": "2026-01-20 14:20:00",
+      "last_order_time": "2026-03-18 11:30:00"
+    },
+    "recent_orders": [
+      {
+        "order_no": "ORD202603181130",
+        "order_amount": 299.00,
+        "order_time": "2026-03-18 11:30:00",
+        "payment_status": "paid"
+      },
+      // ... 最近5条订单
+    ]
+  }
+}
+```
+
+##### 步骤3: 筛选和排序功能
+
+**筛选条件**:
+```
+1. 按用户等级筛选:
+   WHERE user_level = 'vip'
+
+2. 按用户标签筛选:
+   WHERE FIND_IN_SET('老客户', user_tags) > 0
+
+3. 按消费金额筛选:
+   WHERE consumption_amount >= 1000
+
+4. 按绑定时间筛选:
+   WHERE bind_time >= '2026-03-01'  -- 本月新客户
+
+5. 按访问次数筛选:
+   WHERE visit_count >= 10
+
+6. 组合筛选:
+   WHERE user_level = 'vip'
+     AND consumption_amount >= 1000
+     AND bind_time >= '2026-01-01'
+```
+
+**排序选项**:
+```
+1. 按绑定时间降序（最新）:
+   ORDER BY bind_time DESC
+
+2. 按消费金额降序（高消费）:
+   ORDER BY consumption_amount DESC
+
+3. 按订单数量降序（高频）:
+   ORDER BY order_count DESC
+
+4. 按访问次数降序（活跃）:
+   ORDER BY visit_count DESC
+
+5. 按最后访问时间降序（最近活跃）:
+   ORDER BY last_visit_time DESC
+```
+
+#### 页面展示示例
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              小程序A - 客户管理                           │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  筛选: [用户等级▼] [消费范围▼] [绑定时间▼]  搜索: _______│
+│  排序: [默认排序▼]  共1528个客户                          │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │ M1001_001  张三           [VIP]  [老客户][高消费] │  │
+│  │ 头像: [🖼️]                                       │  │
+│  │ 手机: 139****0000                               │  │
+│  │ 统计: 访问58次 | 下单12次 | 消费¥2,580.00       │  │
+│  │ 绑定时间: 2026-01-15  最后访问: 今天 15:30      │  │
+│  │                              [查看详情] [发送消息] │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ M1001_002  李四           [普通] [新客户]       │  │
+│  │ 头像: [🖼️]                                       │  │
+│  │ 手机: 138****0000                               │  │
+│  │ 统计: 访问5次 | 下单1次 | 消费¥158.00          │  │
+│  │ 绑定时间: 2026-03-20  最后访问: 昨天 10:15     │  │
+│  │                              [查看详情] [发送消息] │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│  < 1 2 3 4 5 ... 77 >                                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4.3 案例三：客户S查询自己的小程序A、B、C
+
+#### 业务场景
+
+**角色**: 客户S（某公司管理员，都达网账户）
+
+**需求**:
+- 客户S登录都达网平台
+- 查看自己拥有的所有小程序
+- 可能通过3种方式拥有小程序:
+  1. **定制开发**: 自己公司申请的，平台代开发
+  2. **模板购买**: 购买平台模板
+  3. **租赁模式**: 租赁平台已有小程序
+
+#### 数据视角
+
+**关联关系**:
+```
+客户S (users_XX表)
+  ↓
+  ↓ 公司ID: company_id = 100
+  ↓
+  ↓
+小程序A (mini_programs表)
+├─ owner_company_id = 100 (定制开发/模板购买)
+├─ business_mode = 'development' 或 'template'
+└─ owner_user_id = S的用户ID
+
+小程序B (mini_programs表)
+├─ owner_company_id = 100
+├─ business_mode = 'lease' (租赁)
+└─ expire_time = 2026-12-31 (租赁到期时间)
+
+小程序C (mini_programs表)
+├─ owner_company_id = 100
+├─ business_mode = 'cooperation' (资质合作)
+└─ developer_company_id = 200 (实际开发者)
+```
+
+#### 涉及的表
+
+```
+users_XX (分片表)
+└─ 查询客户S的公司ID
+
+mini_programs (主查询表)
+├─ 查询条件: owner_company_id = 100
+├─ 关联查询: companies (开发者公司)
+└─ 统计数据: merchant_users (客户数量), payment_orders (订单数据)
+```
+
+#### 查询逻辑分解
+
+##### 步骤1: 查询客户S的小程序列表
+
+**逻辑说明**:
+- 用户登录后，通过JWT Token获取 `user_id` 和 `user_shard`
+- 根据user_id查询 `users_XX` 表，获取 `company_id`
+- 根据company_id查询 `mini_programs` 表
+
+**查询步骤**:
+```
+步骤1: 查询用户基本信息
+表: users_XX (根据user_shard定位)
+WHERE id = 1234567890
+获取: company_id = 100
+
+步骤2: 查询小程序列表
+表: mini_programs
+WHERE owner_company_id = 100
+  AND deleted = 0
+ORDER BY create_time DESC
+```
+
+**返回字段**:
+```
+mini_programs表:
+- id (小程序ID)
+- mini_program_name (小程序名称)
+- mini_program_code (小程序编码)
+- wechat_appid (微信AppID)
+- business_mode (业务模式: development/template/lease/cooperation)
+- mini_program_type (小程序类型: retail/catering/service等)
+- logo (小程序Logo)
+- qrcode_url (小程序二维码)
+- online_status (上架状态: dev/review/online/offline)
+- status (状态: inactive/active/suspended/deleted)
+- authorize_time (授权时间)
+- expire_time (过期时间，租赁模式)
+- last_publish_time (最后发布时间)
+
+需要统计的数据:
+- merchant_users: COUNT(*) - 客户总数
+- payment_orders: COUNT(*), SUM(actual_payment_amount) - 订单数据
+```
+
+**返回结果示例**:
+```json
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "user_info": {
+      "user_id": 1234567890,
+      "username": "customer_s",
+      "real_name": "S先生",
+      "company_id": 100,
+      "company_name": "深圳某某科技有限公司"
+    },
+    "total_mini_programs": 3,
+    "mini_programs": [
+      {
+        "id": 10001,
+        "mini_program_name": "某餐饮小程序",
+        "mini_program_code": "MP001",
+        "wechat_appid": "wxabcd1234",
+        "business_mode": "development",
+        "business_mode_name": "定制开发",
+        "mini_program_type": "catering",
+        "mini_program_type_name": "餐饮",
+        "logo": "https://cdn.example.com/logo/mp001.jpg",
+        "qrcode_url": "https://cdn.example.com/qrcode/mp001.jpg",
+        "online_status": "online",
+        "online_status_name": "已上架",
+        "status": "active",
+        "authorize_time": "2026-01-15 10:00:00",
+        "expire_time": null,
+        "last_publish_time": "2026-03-10 15:30:00",
+        "statistics": {
+          "total_customers": 1528,
+          "total_orders": 8650,
+          "total_revenue": 258620.50
+        }
+      },
+      {
+        "id": 10002,
+        "mini_program_name": "某零售小程序",
+        "mini_program_code": "MP002",
+        "wechat_appid": "wxyz5678",
+        "business_mode": "template",
+        "business_mode_name": "模板购买",
+        "mini_program_type": "retail",
+        "mini_program_type_name": "零售",
+        "logo": "https://cdn.example.com/logo/mp002.jpg",
+        "qrcode_url": "https://cdn.example.com/qrcode/mp002.jpg",
+        "online_status": "online",
+        "online_status_name": "已上架",
+        "status": "active",
+        "authorize_time": "2026-02-10 14:00:00",
+        "expire_time": null,
+        "last_publish_time": "2026-03-05 10:20:00",
+        "statistics": {
+          "total_customers": 3250,
+          "total_orders": 15230,
+          "total_revenue": 458620.00
+        }
+      },
+      {
+        "id": 10003,
+        "mini_program_name": "某服务小程序",
+        "mini_program_code": "MP003",
+        "wechat_appid": "wxdef9012",
+        "business_mode": "lease",
+        "business_mode_name": "租赁模式",
+        "mini_program_type": "service",
+        "mini_program_type_name": "服务",
+        "logo": "https://cdn.example.com/logo/mp003.jpg",
+        "qrcode_url": "https://cdn.example.com/qrcode/mp003.jpg",
+        "online_status": "online",
+        "online_status_name": "已上架",
+        "status": "active",
+        "authorize_time": "2026-03-01 09:00:00",
+        "expire_time": "2026-12-31",  // 租赁到期时间
+        "last_publish_time": "2026-03-08 16:45:00",
+        "statistics": {
+          "total_customers": 856,
+          "total_orders": 3280,
+          "total_revenue": 98620.50
+        }
+      }
+    ]
+  }
+}
+```
+
+##### 步骤2: 查询小程序详情
+
+**业务场景**: 点击某个小程序，查看详细信息
+
+**涉及表**:
+```
+mini_programs (主表)
+├─ 基本信息
+├─ 微信配置
+├─ 认证/备案状态
+└─ 服务器配置
+
+companies (关联表)
+├─ 开发者公司信息
+└─ 所有者公司信息
+
+merchant_users (统计表)
+└─ 客户统计
+
+payment_orders (统计表)
+└─ 订单统计
+```
+
+**查询逻辑**:
+```
+表: mini_programs
+WHERE id = 10001
+
+关联查询:
+1. LEFT JOIN companies AS owner_company
+   ON mini_programs.owner_company_id = owner_company.id
+   - 获取所有者公司信息
+
+2. LEFT JOIN companies AS developer_company
+   ON mini_programs.developer_company_id = developer_company.id
+   - 获取开发者公司信息（如果是代开发模式）
+
+统计数据:
+1. SELECT COUNT(*) FROM merchant_users
+   WHERE merchant_id = 10001
+   - 客户总数
+
+2. SELECT COUNT(*), SUM(actual_payment_amount)
+   FROM payment_orders
+   WHERE mini_program_id = 10001 AND payment_status = 'paid'
+   - 订单总数和总收入
+
+3. SELECT COUNT(*), SUM(actual_payment_amount)
+   FROM payment_orders
+   WHERE mini_program_id = 10001
+   AND order_time >= '2026-03-01'
+   AND payment_status = 'paid'
+   - 本月订单数和收入
+```
+
+**返回结果示例**:
+```json
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "basic_info": {
+      "id": 10001,
+      "mini_program_name": "某餐饮小程序",
+      "mini_program_code": "MP001",
+      "wechat_appid": "wxabcd1234",
+      "logo": "https://cdn.example.com/logo/mp001.jpg",
+      "qrcode_url": "https://cdn.example.com/qrcode/mp001.jpg",
+      "description": "为某餐饮公司开发的订餐小程序",
+      "intro": "提供在线点餐、外卖配送、预约排队等功能"
+    },
+    "business_info": {
+      "business_mode": "development",
+      "business_mode_name": "定制开发",
+      "mini_program_type": "catering",
+      "industry": "餐饮",
+      "first_category": "餐饮",
+      "second_category": "快餐"
+    },
+    "wechat_info": {
+      "wechat_certified": true,
+      "certification_status": "approved",
+      "certification_time": "2026-01-20",
+      "certification_expire_time": "2027-01-20",
+      "filing_status": "approved",
+      "filing_no": "粤ICP备2026000000号-1A",
+      "filing_time": "2026-01-25"
+    },
+    "payment_info": {
+      "wechat_pay_enabled": true,
+      "wechat_pay_mch_id": "1234567890"
+    },
+    "status_info": {
+      "online_status": "online",
+      "status": "active",
+      "authorize_time": "2026-01-15 10:00:00",
+      "last_publish_time": "2026-03-10 15:30:00"
+    },
+    "owner_info": {
+      "company_id": 100,
+      "company_name": "深圳某某科技有限公司",
+      "contact_person": "S先生",
+      "contact_phone": "139****0000"
+    },
+    "developer_info": {
+      "company_id": 1,
+      "company_name": "都达网（平台）"
+    },
+    "statistics": {
+      "total_customers": 1528,
+      "new_customers_this_month": 128,
+      "total_orders": 8650,
+      "orders_this_month": 650,
+      "total_revenue": 258620.50,
+      "revenue_this_month": 28650.00
+    }
+  }
+}
+```
+
+#### 页面展示示例
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              我的小程序                    (共3个)       │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │ 某餐饮小程序                    [已上架]         │  │
+│  │ [Logo]                                         │  │
+│  │ AppID: wxabcd1234                              │  │
+│  │ 业务模式: 定制开发                              │  │
+│  │ 类型: �餐饮                                      │  │
+│  │                                                 │  │
+│  │ 统计数据:                                       │  │
+│  │ • 客户总数: 1,528  +128 本月                   │  │
+│  │ • 订单总数: 8,650  +650 本月                   │  │
+│  │ • 总收入: ¥258,620.50  +¥28,650.00 本月        │  │
+│  │                                                 │  │
+│  │ 微信认证: ✓ 已认证 (有效期至 2027-01-20)       │  │
+│  │ 小程序备案: ✓ 已备案 (粤ICP备2026000000号-1A)  │  │
+│  │ 微信支付: ✓ 已开通                              │  │
+│  │                                                 │  │
+│  │ 最后发布: 2026-03-10 15:30                     │  │
+│  │           [查看详情] [管理] [数据分析]          │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ 某零售小程序                    [已上架]         │  │
+│  │ [Logo]                                         │  │
+│  │ AppID: wxyz5678                                │  │
+│  │ 业务模式: 模板购买                              │  │
+│  │ 类型: 零售                                      │  │
+│  │ ...                                            │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │ 某服务小程序                    [已上架]         │  │
+│  │ [Logo]                                         │  │
+│  │ AppID: wxdef9012                               │  │
+│  │ 业务模式: 租赁模式                              │  │
+│  │ 租赁到期: 2026-12-31 (剩余285天)               │  │
+│  │ ...                                            │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│                                  [+ 创建小程序]         │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4.4 案例四：平台查询和管理下单系统
+
+#### 业务场景
+
+**角色**: 平台管理员
+
+**需求**:
+1. 查看所有小程序的订单数据
+2. 按小程序、商户、时间等维度筛选
+3. 查看订单详情和分账状态
+4. 手动触发分账（对于分账失败的订单）
+5. 查看分账记录和结算单据
+
+#### 数据视角
+
+**全局视角**:
+- 平台可以看到所有小程序的订单
+- 需要关联多个表来获取完整信息
+- 需要统计分账数据和平台收入
+
+#### 涉及的表
+
+```
+payment_orders (主查询表)
+├─ 订单基本信息
+├─ 支付状态
+└─ 分账状态
+
+mini_programs (关联表)
+├─ 小程序名称
+├─ 小程序类型
+└─ 所属公司
+
+merchants (关联表)
+├─ 商户名称
+├─ 分账比例
+└─ 结算周期
+
+merchant_users (关联表)
+├─ 用户昵称
+└─ 用户ID
+
+profit_sharing_records (分账记录表)
+├─ 分账详情
+└─ 分账时间
+```
+
+#### 查询逻辑分解
+
+##### 步骤1: 查询订单列表（全局视角）
+
+**筛选条件**:
+```
+1. 按时间筛选:
+   WHERE order_time >= '2026-03-01' AND order_time < '2026-04-01'  -- 本月
+
+2. 按小程序筛选:
+   WHERE mini_program_id = 10001
+
+3. 按商户筛选:
+   WHERE merchant_id = 1001
+
+4. 按支付状态筛选:
+   WHERE payment_status = 'paid'
+
+5. 按分账状态筛选:
+   WHERE profit_sharing_status = 'pending'  -- 待分账
+
+6. 按金额筛选:
+   WHERE actual_payment_amount >= 1000  -- 金额 >= 1000元
+```
+
+**查询逻辑**：
+
+**主查询表：payment_orders_202603（2026年3月的订单表）**
+
+**关联查询3张表**：
+
+| 关联顺序 | 关联表 | 关联目的 | 关联方式 |
+|---------|--------|---------|---------|
+| 1 | mini_programs（小程序表） | 获取小程序信息（名称、AppID） | 通过mini_program_id关联 |
+| 2 | merchants（商户表） | 获取商户信息（名称、分账比例） | 通过merchant_id关联 |
+| 3 | merchant_users（商户用户表） | 获取用户信息（昵称、头像） | 通过merchant_user_id关联 |
+
+**查询条件与返回字段**：
+
+| 查询项 | 说明 |
+|-------|------|
+| 主表 | payment_orders_202603（当月订单表） |
+| 基础筛选条件 | deleted=0（未删除） |
+| 时间筛选条件 | payment_time >= '2026-03-01'（本月订单） |
+| 排序方式 | 按payment_time降序（最新订单在前） |
+| 分页参数 | 每页20条，第1页（OFFSET 0） |
+| 返回字段（订单信息） | id, order_no（订单号）, transaction_id（微信交易单号）, order_type（订单类型）, order_amount（订单金额）, actual_payment_amount（实付金额）, payment_method（支付方式）, payment_status（支付状态）, profit_sharing_enabled（是否分账）, profit_sharing_status（分账状态）, order_time（下单时间）, payment_time（支付时间）, profit_sharing_time（分账时间） |
+| 返回字段（小程序信息） | mini_program_id, mini_program_name, wechat_appid |
+| 返回字段（商户信息） | merchant_id, merchant_name, profit_sharing_rate（分账比例） |
+| 返回字段（用户信息） | merchant_user_id, nickname, avatar |
+```
+
+**返回结果示例**:
+```json
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "total": 8650,
+    "page": 1,
+    "page_size": 20,
+    "summary": {
+      "total_amount": 258620.50,
+      "total_orders": 8650,
+      "profit_sharing_pending": 182,
+      "platform_revenue": 25862.05,
+      "merchant_revenue": 232758.45
+    },
+    "orders": [
+      {
+        "order_no": "ORD202603221530001",
+        "transaction_id": "4200001234567890",
+        "order_type": "商品购买",
+        "order_amount": 299.00,
+        "actual_payment_amount": 299.00,
+        "payment_method": "wechat_pay",
+        "payment_status": "paid",
+        "profit_sharing_enabled": true,
+        "profit_sharing_status": "completed",
+        "order_time": "2026-03-22 15:30:00",
+        "payment_time": "2026-03-22 15:30:15",
+        "profit_sharing_time": "2026-03-22 15:31:00",
+        "mini_program": {
+          "id": 10001,
+          "mini_program_name": "某餐饮小程序",
+          "wechat_appid": "wxabcd1234"
+        },
+        "merchant": {
+          "id": 1001,
+          "merchant_name": "测试商户A",
+          "profit_sharing_rate": 0.10
+        },
+        "user": {
+          "merchant_user_id": "M1001_001",
+          "nickname": "张三",
+          "avatar": "https://cdn.example.com/avatar/123.jpg"
+        },
+        "profit_sharing_detail": {
+          "platform_amount": 29.90,
+          "merchant_amount": 269.10
+        }
+      },
+      {
+        "order_no": "ORD202603221425002",
+        "transaction_id": "4200001234567891",
+        "order_type": "服务预订",
+        "order_amount": 158.00,
+        "actual_payment_amount": 158.00,
+        "payment_method": "wechat_pay",
+        "payment_status": "paid",
+        "profit_sharing_enabled": true,
+        "profit_sharing_status": "pending",  // 待分账
+        "order_time": "2026-03-22 14:25:00",
+        "payment_time": "2026-03-22 14:25:12",
+        "profit_sharing_time": null,
+        "mini_program": {
+          "id": 10002,
+          "mini_program_name": "某零售小程序",
+          "wechat_appid": "wxyz5678"
+        },
+        "merchant": {
+          "id": 1002,
+          "merchant_name": "测试商户B",
+          "profit_sharing_rate": 0.10
+        },
+        "user": {
+          "merchant_user_id": "M1002_005",
+          "nickname": "李四",
+          "avatar": "https://cdn.example.com/avatar/456.jpg"
+        },
+        "profit_sharing_detail": {
+          "platform_amount": 15.80,
+          "merchant_amount": 142.20
+        }
+      },
+      // ... 共20条
+    ]
+  }
+}
+```
+
+##### 步骤2: 查询订单详情和分账记录
+
+**业务场景**: 点击某个订单，查看完整信息和分账记录
+
+**涉及表**:
+```
+payment_orders (主表)
+├─ 订单基本信息
+├─ 分账规则
+└─ 分账状态
+
+profit_sharing_records (分账记录表)
+├─ 分账详情
+├─ 接收方信息
+├─ 分账金额
+└─ 分账时间
+
+mini_programs (关联表)
+└─ 小程序信息
+
+merchants (关联表)
+└─ 商户信息
+```
+
+**查询逻辑**:
+```
+步骤1: 查询订单基本信息
+表: payment_orders_202603
+WHERE order_no = 'ORD202603221530001'
+
+步骤2: 查询分账记录
+表: profit_sharing_records
+WHERE order_no = 'ORD202603221530001'
+ORDER BY create_time DESC
+
+步骤3: 关联查询
+LEFT JOIN mini_programs ON payment_orders.mini_program_id = mini_programs.id
+LEFT JOIN merchants ON payment_orders.merchant_id = merchants.id
+LEFT JOIN merchant_users ON payment_orders.merchant_user_id = merchant_users.id
+```
+
+**返回结果示例**:
+```json
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "order_info": {
+      "order_no": "ORD202603221530001",
+      "transaction_id": "4200001234567890",
+      "order_type": "商品购买",
+      "order_amount": 299.00,
+      "actual_payment_amount": 299.00,
+      "payment_method": "wechat_pay",
+      "payment_status": "paid",
+      "profit_sharing_enabled": true,
+      "profit_sharing_status": "completed",
+      "order_time": "2026-03-22 15:30:00",
+      "payment_time": "2026-03-22 15:30:15",
+      "profit_sharing_time": "2026-03-22 15:31:00",
+      "profit_sharing_rules": {
+        "platform_rate": 0.10,
+        "platform_amount": 29.90,
+        "merchant_rate": 0.90,
+        "merchant_amount": 269.10,
+        "platform_account": "platform_mch_001",
+        "merchant_account": "merchant_mch_1001"
+      }
+    },
+    "mini_program": {
+      "id": 10001,
+      "mini_program_name": "某餐饮小程序",
+      "wechat_appid": "wxabcd1234",
+      "business_mode": "development",
+      "mini_program_type": "catering"
+    },
+    "merchant": {
+      "id": 1001,
+      "merchant_name": "测试商户A",
+      "profit_sharing_rate": 0.10,
+      "settlement_cycle": "T+1"
+    },
+    "user": {
+      "merchant_user_id": "M1001_001",
+      "platform_user_id": 1234567890,
+      "nickname": "张三",
+      "avatar": "https://cdn.example.com/avatar/123.jpg"
+    },
+    "profit_sharing_records": [
+      {
+        "id": 10001,
+        "order_no": "ORD202603221530001",
+        "receiver_type": "MERCHANT_ID",
+        "receiver_account": "merchant_mch_1001",
+        "receiver_name": "测试商户A",
+        "amount": 269.10,
+        "description": "商户分账",
+        "status": "success",
+        "wechat_transaction_id": "4300001234567890",
+        "create_time": "2026-03-22 15:31:00",
+        "finish_time": "2026-03-22 15:31:05"
+      },
+      {
+        "id": 10002,
+        "order_no": "ORD202603221530001",
+        "receiver_type": "MERCHANT_ID",
+        "receiver_account": "platform_mch_001",
+        "receiver_name": "都达网平台",
+        "amount": 29.90,
+        "description": "平台服务费",
+        "status": "success",
+        "wechat_transaction_id": "4300001234567891",
+        "create_time": "2026-03-22 15:31:00",
+        "finish_time": "2026-03-22 15:31:06"
+      }
+    ]
+  }
+}
+```
+
+##### 步骤3: 手动触发分账
+
+**业务场景**:
+- 订单已支付，但分账状态为 `pending` 或 `failed`
+- 平台管理员手动触发分账
+
+**查询逻辑**:
+```
+步骤1: 查询订单信息
+表: payment_orders_202603
+WHERE order_no = 'ORD202603221425002'
+检查: profit_sharing_status = 'pending' OR 'failed'
+检查: payment_status = 'paid'
+
+步骤2: 查询商户分账配置
+表: merchants
+WHERE id = 1002
+获取: profit_sharing_rate = 0.10
+
+步骤3: 计算分账金额
+订单金额: 158.00元
+平台分账: 158.00 × 10% = 15.80元
+商户分账: 158.00 × 90% = 142.20元
+
+步骤4: 调用微信分账接口
+POST https://api.mch.weixin.qq.com/secapi/pay/profitsharing
+{
+  "transaction_id": "4200001234567891",
+  "out_order_no": "PROFIT20260322150001",
+  "receivers": [
+    {
+      "type": "MERCHANT_ID",
+      "account": "platform_mch_001",
+      "amount": 1580,  // 单位：分
+      "description": "平台服务费"
+    }
+  ]
+}
+
+步骤5: 更新分账状态
+
+| 操作项 | 说明 |
+|-------|------|
+| 操作类型 | UPDATE（更新） |
+| 数据表 | payment_orders_202603（当月订单表） |
+| 筛选条件 | WHERE order_no = 'ORD202603221425002' |
+| 更新字段1 | profit_sharing_status = 'completed'（分账状态改为已完成） |
+| 更新字段2 | profit_sharing_time = NOW()（记录分账时间） |
+
+步骤6: 插入分账记录
+
+| 操作项 | 说明 |
+|-------|------|
+| 操作类型 | INSERT（插入） |
+| 数据表 | profit_sharing_records（分账记录表） |
+| 记录内容 | 订单号、分账金额、分账时间、分账各方信息等 |
+```
+
+##### 步骤4: 统计平台收入
+
+**业务场景**: 查看平台收入数据，按时间、小程序、商户等维度统计
+
+**查询逻辑**：
+
+**步骤1：统计今日平台收入**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | payment_orders_202603（当月订单表） |
+| 筛选条件 | payment_time >= 今天00:00:00 AND payment_status='paid' AND profit_sharing_enabled=1 AND profit_sharing_status='completed' |
+| 计算字段 | profit_sharing_rules.platform_amount（分账规则中的平台分账金额） |
+| 聚合计算 | SUM（求和所有订单的平台分账金额） |
+
+**步骤2：统计本月平台收入**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | payment_orders_202603（当月订单表） |
+| 筛选条件 | payment_time >= '2026-03-01'（本月1号） AND payment_status='paid' AND profit_sharing_enabled=1 AND profit_sharing_status='completed' |
+| 计算字段 | profit_sharing_rules.platform_amount（平台分账金额） |
+| 聚合计算 | SUM（求和） |
+
+**步骤3：按小程序统计平台收入（GROUP BY聚合）**
+
+| 查询项 | 说明 |
+|-------|------|
+| 主表 | payment_orders_202603（当月订单表） |
+| 关联表 | mini_programs（小程序表），通过mini_program_id关联 |
+| 筛选条件 | payment_time >= '2026-03-01' AND payment_status='paid' AND profit_sharing_enabled=1 AND profit_sharing_status='completed' |
+| 分组字段 | mini_program_id（按小程序ID分组） |
+| 聚合计算 | COUNT(*)（订单数）、SUM(actual_payment_amount)（总金额）、SUM(platform_amount)（平台收入） |
+| 排序方式 | 按platform_revenue降序（收入高的在前） |
+| 返回字段 | mini_program_id, mini_program_name, order_count, total_amount, platform_revenue |
+
+**步骤4：按商户统计平台收入（GROUP BY聚合）**
+
+| 查询项 | 说明 |
+|-------|------|
+| 主表 | payment_orders_202603（当月订单表） |
+| 关联表 | merchants（商户表），通过merchant_id关联 |
+| 筛选条件 | payment_time >= '2026-03-01' AND payment_status='paid' AND profit_sharing_enabled=1 AND profit_sharing_status='completed' |
+| 分组字段 | merchant_id（按商户ID分组） |
+| 聚合计算 | COUNT(*)（订单数）、SUM(actual_payment_amount)（总金额）、SUM(platform_amount)（平台收入） |
+| 排序方式 | 按platform_revenue降序 |
+| 返回字段 | merchant_id, merchant_name, order_count, total_amount, platform_revenue |
+```
+
+**返回结果示例**:
+```json
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "today_revenue": {
+      "date": "2026-03-22",
+      "platform_revenue": 2865.50,
+      "merchant_revenue": 25789.50,
+      "total_revenue": 28655.00,
+      "order_count": 650
+    },
+    "month_revenue": {
+      "month": "2026-03",
+      "platform_revenue": 86520.50,
+      "merchant_revenue": 778684.50,
+      "total_revenue": 865205.00,
+      "order_count": 18560
+    },
+    "by_mini_program": [
+      {
+        "mini_program_id": 10001,
+        "mini_program_name": "某餐饮小程序",
+        "order_count": 8650,
+        "total_amount": 258620.50,
+        "platform_revenue": 25862.05
+      },
+      {
+        "mini_program_id": 10002,
+        "mini_program_name": "某零售小程序",
+        "order_count": 6580,
+        "total_amount": 185650.00,
+        "platform_revenue": 18565.00
+      },
+      // ...
+    ],
+    "by_merchant": [
+      {
+        "merchant_id": 1001,
+        "merchant_name": "测试商户A",
+        "order_count": 8650,
+        "total_amount": 258620.50,
+        "platform_revenue": 25862.05
+      },
+      {
+        "merchant_id": 1002,
+        "merchant_name": "测试商户B",
+        "order_count": 6580,
+        "total_amount": 185650.00,
+        "platform_revenue": 18565.00
+      },
+      // ...
+    ]
+  }
+}
+```
+
+#### 页面展示示例
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              订单管理 - 平台视角                          │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  筛选: [时间范围▼] [小程序▼] [商户▼] [状态▼]            │
+│  搜索: ______________________________                  │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │ 本月数据统计                                    │  │
+│  │ • 订单总数: 18,560                             │  │
+│  │ • 交易总额: ¥865,205.00                        │  │
+│  │ • 平台收入: ¥86,520.50 (10%)                  │  │
+│  │ • 商户收入: ¥778,684.50 (90%)                 │  │
+│  │ • 待分账订单: 182                              │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │ 订单列表                                [导出▼]  │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ORD202603221530001                              │  │
+│  │ 某餐饮小程序 - 测试商户A - 张三                 │  │
+│  │ 金额: ¥299.00  已支付  已分账                   │  │
+│  │ 平台: ¥29.90  商户: ¥269.10                   │  │
+│  │ 下单: 2026-03-22 15:30  支付: 15:30  分账: 15:31│  │
+│  │                         [查看详情]              │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ORD202603221425002                              │  │
+│  │ 某零售小程序 - 测试商户B - 李四                 │  │
+│  │ 金额: ¥158.00  已支付  待分账 [立即分账]        │  │
+│  │ 预计平台: ¥15.80  商户: ¥142.20                │  │
+│  │ 下单: 2026-03-22 14:25  支付: 14:25             │  │
+│  │                         [查看详情]              │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│  < 1 2 3 4 5 ... 928 >                                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4.5 案例五：代开发任务全流程查询
+
+#### 业务场景
+
+**角色**: 平台管理员 / 客户 / 开发者
+
+**需求**:
+1. 查询代开发任务的当前状态
+2. 查看任务的完整流程记录
+3. 查看名称审核、认证、备案的详细状态
+4. 查看任务进度和预计完成时间
+
+#### 涉及的表
+
+```
+mini_program_development_tasks (主表)
+├─ 任务基本信息
+├─ 当前步骤
+├─ 进度百分比
+└─ 微信审核状态
+
+companies (关联表 - 客户)
+└─ 客户公司信息
+
+companies (关联表 - 开发者)
+└─ 开发者公司信息
+
+mini_programs (关联表)
+└─ 小程序信息（如果已创建）
+```
+
+#### 查询逻辑分解
+
+##### 步骤1: 查询任务列表
+
+**筛选条件**:
+```
+1. 按任务状态筛选:
+   WHERE task_status = 'in_progress'  -- 进行中
+
+2. 按当前步骤筛选:
+   WHERE current_step = 'filing'  -- 备案阶段
+
+3. 按客户筛选:
+   WHERE client_company_id = 100
+
+4. 按开发者筛选:
+   WHERE developer_company_id = 1
+```
+
+**查询逻辑**：
+
+**主查询表：mini_program_development_tasks（代开发任务表）**
+
+**关联查询3张表**：
+
+| 关联顺序 | 关联表 | 关联目的 | 关联方式 |
+|---------|--------|---------|---------|
+| 1 | companies（客户公司表） | 获取客户公司名称 | 通过client_company_id关联 |
+| 2 | companies（开发者公司表） | 获取开发者公司名称 | 通过developer_company_id关联 |
+| 3 | mini_programs（小程序表） | 获取小程序名称和AppID | 通过mini_program_id关联 |
+
+**查询条件与返回字段**：
+
+| 查询项 | 说明 |
+|-------|------|
+| 主表 | mini_program_development_tasks（代开发任务表） |
+| 基础筛选条件 | deleted=0（未删除） AND task_status='in_progress'（进行中） |
+| 排序方式 | 按create_time降序（最新任务在前） |
+| 取值数量 | 前20条 |
+| 返回字段（任务信息） | id, task_no（任务编号）, task_name（任务名称）, task_type（任务类型）, task_status（任务状态）, current_step（当前步骤）, progress_percent（进度百分比）, estimated_finish_time（预计完成时间）, create_time（创建时间） |
+| 返回字段（公司信息） | client_company_name（客户公司名称）, developer_company_name（开发者公司名称） |
+| 返回字段（小程序信息） | mini_program_name, wechat_appid |
+```
+
+**返回结果示例**:
+```json
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "total": 85,
+    "tasks": [
+      {
+        "id": 10001,
+        "task_no": "TASK20260322001",
+        "task_name": "为深圳某餐饮公司开发小程序",
+        "task_type": "all",
+        "task_status": "in_progress",
+        "task_status_name": "进行中",
+        "current_step": "filing",
+        "current_step_name": "小程序备案",
+        "progress_percent": 65,
+        "estimated_finish_time": "2026-03-28 18:00:00",
+        "create_time": "2026-03-15 10:00:00",
+        "client_company": {
+          "id": 100,
+          "company_name": "深圳某餐饮公司"
+        },
+        "developer_company": {
+          "id": 1,
+          "company_name": "都达网（平台）"
+        },
+        "mini_program": {
+          "mini_program_name": "某餐饮小程序",
+          "wechat_appid": "wxabcd1234"
+        }
+      },
+      // ...
+    ]
+  }
+}
+```
+
+##### 步骤2: 查询任务详情（全流程）
+
+**业务场景**: 查看任务的完整流程和每个步骤的状态
+
+**返回结果示例**:
+```json
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "task_info": {
+      "task_no": "TASK20260322001",
+      "task_name": "为深圳某餐饮公司开发小程序",
+      "task_type": "all",
+      "task_status": "in_progress",
+      "current_step": "filing",
+      "progress_percent": 65,
+      "start_time": "2026-03-15 10:00:00",
+      "estimated_finish_time": "2026-03-28 18:00:00",
+      "total_fee": 5300.00,
+      "paid_fee": 5300.00,
+      "payment_status": "paid"
+    },
+    "process_steps": [
+      {
+        "step": "basic_info",
+        "step_name": "基础信息填写",
+        "status": "completed",
+        "status_name": "已完成",
+        "start_time": "2026-03-15 10:00:00",
+        "finish_time": "2026-03-15 11:30:00",
+        "data": {
+          "wechat_enterprise_name": "深圳某餐饮公司",
+          "wechat_enterprise_code": "91440300XXXXXXXXXX",
+          "wechat_legal_person_wechat": "legal_person_wx001",
+          "wechat_appid": "wxabcd1234"
+        }
+      },
+      {
+        "step": "name_audit",
+        "step_name": "小程序名称审核",
+        "status": "completed",
+        "status_name": "已完成",
+        "start_time": "2026-03-15 11:30:00",
+        "finish_time": "2026-03-16 09:20:00",
+        "data": {
+          "mini_program_name": "某餐饮小程序",
+          "mini_program_name_status": "approved",
+          "wechat_appid": "wxabcd1234"
+        }
+      },
+      {
+        "step": "certification",
+        "step_name": "微信认证",
+        "status": "completed",
+        "status_name": "已完成",
+        "start_time": "2026-03-16 09:20:00",
+        "finish_time": "2026-03-18 15:40:00",
+        "data": {
+          "certification_apply_status": "approved",
+          "certification_apply_id": "CERT123456",
+          "certification_order_no": "CERT_ORDER_789",
+          "certification_payment_status": "paid",
+          "certification_time": "2026-03-18 15:40:00",
+          "certification_expire_time": "2027-03-18"
+        }
+      },
+      {
+        "step": "filing",
+        "step_name": "小程序备案",
+        "status": "in_progress",
+        "status_name": "进行中",
+        "start_time": "2026-03-18 16:00:00",
+        "finish_time": null,
+        "data": {
+          "filing_apply_status": "pending",
+          "filing_task_id": "FILING_TASK_001",
+          "filing_face_id_task_id": "FACE_TASK_001",
+          "filing_status_detail": {
+            "main_body_status": "approved",
+            "mini_program_status": "pending",
+            "overall_status": "平台审核中"
+          }
+        }
+      },
+      {
+        "step": "development",
+        "step_name": "功能开发",
+        "status": "pending",
+        "status_name": "待开始"
+      },
+      {
+        "step": "testing",
+        "step_name": "测试验收",
+        "status": "pending",
+        "status_name": "待开始"
+      },
+      {
+        "step": "launch",
+        "step_name": "上线发布",
+        "status": "pending",
+        "status_name": "待开始"
+      }
+    ]
+  }
+}
+```
+
+#### 页面展示示例
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              代开发任务 - 任务详情                        │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  任务编号: TASK20260322001                              │
+│  任务名称: 为深圳某餐饮公司开发小程序                     │
+│  任务类型: 全流程代办                                    │
+│  进度: 65% ████████████████████░░░░░░░░░░░░░░░         │
+│  当前步骤: 小程序备案                                    │
+│  预计完成: 2026-03-28 18:00                             │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │ 流程进度                                        │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ✓ 基础信息填写          已完成  03-15 10:00     │  │
+│  │   企业名称: 深圳某餐饮公司                       │  │
+│  │   AppID: wxabcd1234                            │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ✓ 小程序名称审核         已完成  03-15 11:30     │  │
+│  │   名称: 某餐饮小程序                            │  │
+│  │   状态: 已通过                                  │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ✓ 微信认证              已完成  03-16 09:20     │  │
+│  │   认证单号: CERT123456                         │  │
+│  │   认证时间: 2026-03-18 15:40                   │  │
+│  │   有效期至: 2027-03-18                         │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ⟳ 小程序备案             进行中  03-18 16:00     │  │
+│  │   备案任务ID: FILING_TASK_001                  │  │
+│  │   人核身任务ID: FACE_TASK_001                  │  │
+│  │   当前状态: 平台审核中                         │  │
+│  │   [查看详情] [重新提交]                         │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ○ 功能开发              待开始                   │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ○ 测试验收              待开始                   │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ○ 上线发布              待开始                   │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │ 费用信息                                        │  │
+│  │ • 总费用: ¥5,300.00                             │  │
+│  │ • 已支付: ¥5,300.00                             │  │
+│  │ • 开发费: ¥5,000.00                             │  │
+│  │ • 认证费: ¥300.00                               │  │
+│  └─────────────────────────────────────────────────┘  │
+│                                                         │
+│                    [联系客户] [更新进度]               │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4.6 案例六：跨平台用户身份统一（PHP后端 → Java后端）
+
+#### 4.6.1 业务场景描述
+
+**场景背景**：
+都达网平台有多个后端系统在工作：
+- **Java后端（Spring Cloud）**：存储都达网账户的核心数据（订单、支付、用户信息）
+- **PHP后端**：独立运行的业务系统，有自己的用户体系
+
+**遇到的问题**：
+一个用户在PHP后端注册了账户，当他在Java后端平台的小程序中下单时，Java后端需要识别出"这个PHP用户就是我们平台上的某某用户"，不能当作陌生人处理。
+
+**解决方案**：
+通过"平台统一UnionID"机制，让PHP后端的用户和Java后端的用户关联起来，实现跨平台的身份统一。
+
+---
+
+#### 4.6.2 涉及的核心ID类型
+
+| ID类型 | 说明 | 所在系统 | 示例 |
+|--------|------|---------|------|
+| **PHP后端用户ID** | PHP系统中用户的唯一标识 | PHP后端 | 10001 |
+| **手机号** | 用户注册时的手机号 | 两个系统都有 | 13900139001 |
+| **平台UnionID** | 跨平台的统一用户标识 | Java后端（中央服务分配） | UNI2026032212345678 |
+| **Java后端用户ID** | Java系统中用户的唯一标识 | Java后端 | 1000000001 |
+
+---
+
+#### 4.6.3 身份统一的逻辑链条
+
+**步骤1：PHP后端用户新注册/登录时**
+
+```
+PHP后端用户输入手机号 13900139001
+    ↓
+PHP后端向Java后端发送查询请求："这个手机号在你们平台注册过吗？"
+    ↓
+Java后端查询结果：
+  【情况A】手机号已注册 → 返回已有的平台UnionID
+  【情况B】手机号未注册 → Java后端分配新的平台UnionID
+    ↓
+PHP后端拿到平台UnionID，保存到本地用户记录中
+    ↓
+PHP后端向Java后端发送绑定请求："把这个平台UnionID和我的PHP用户ID 10001绑定起来"
+    ↓
+Java后端记录绑定关系，完成身份统一
+```
+
+---
+
+#### 4.6.4 查询逻辑说明
+
+**查询1：检查手机号是否已在Java后端注册**
+
+| 操作 | 说明 |
+|------|------|
+| **请求方** | PHP后端 |
+| **接收方** | Java后端（中央UnionID服务） |
+| **查询内容** | 手机号 13900139001 是否已分配平台UnionID |
+| **返回结果A** | 已注册，返回平台UnionID：UNI2026032212345678 |
+| **返回结果B** | 未注册，需要分配新的UnionID |
+
+**查询2：分配新的平台UnionID**
+
+| 操作 | 说明 |
+|------|------|
+| **触发条件** | 手机号首次在平台注册 |
+| **生成方式** | Java后端的中央服务统一分配 |
+| **唯一性保证** | 全局唯一，绝不会重复 |
+| **返回结果** | 新的平台UnionID，例如：UNI2026032212345678 |
+
+**查询3：绑定PHP用户ID和平台UnionID**
+
+| 操作 | 说明 |
+|------|------|
+| **请求方** | PHP后端 |
+| **接收方** | Java后端 |
+| **绑定内容** | PHP用户ID 10001 + 平台UnionID UNI2026032212345678 |
+| **Java后端操作** | 在跨平台映射表中记录这个绑定关系 |
+| **后续影响** | 以后只要通过这个UnionID，就能查到对应的PHP用户ID和Java用户ID |
+
+---
+
+#### 4.6.5 数据流转示意图
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      用户使用场景                                │
+└─────────────────────────────────────────────────────────────────┘
+
+第1天：用户在PHP后端注册
+──────────────────────────────────────────────────────────────────
+用户 → PHP后端："我用手机号 13900139001 注册"
+PHP后端 → Java后端："检查这个手机号是否已注册？"
+Java后端 → PHP后端："未注册，这是新的UnionID：UNI2026032212345678"
+PHP后端 → Java后端："绑定 PHP用户ID 10001 和 UnionID UNI2026032212345678"
+Java后端："绑定关系已记录"
+
+
+第2天：用户在小程序（Java后端）中下单
+──────────────────────────────────────────────────────────────────
+用户 → 小程序："我要下单"
+小程序 → Java后端："用户用微信登录，OpenID是 oAAAAA_xxx"
+Java后端查询："这个OpenID对应的平台UnionID是... UNI2026032212345678"
+Java后端查询："这个UnionID绑定了哪些系统？ → PHP用户ID 10001, Java用户ID 1000000001"
+Java后端："识别到用户身份，创建订单"
+
+
+第3天：用户在PHP后端查看订单
+──────────────────────────────────────────────────────────────────
+用户 → PHP后端："查看我的订单"
+PHP后端："我的PHP用户ID是 10001"
+PHP后端 → Java后端："查询 PHP用户ID 10001 对应的平台UnionID"
+Java后端 → PHP后端："是 UNI2026032212345678"
+PHP后端 → Java后端："查询这个UnionID的所有订单"
+Java后端 → PHP后端："返回订单列表..."
+PHP后端："展示给用户"
+```
+
+---
+
+#### 4.6.6 涉及的数据表
+
+| 数据表 | 存储内容 | 作用 |
+|--------|---------|------|
+| **platform_unionid_registry** | 平台UnionID分配记录 | 记录哪个手机号分配了哪个UnionID |
+| **cross_platform_user_mappings** | 跨平台用户映射关系 | 记录：UnionID ↔ PHP用户ID ↔ Java用户ID |
+| **api_keys** | API密钥和权限 | PHP后端调用Java后端的"通行证" |
+| **api_call_logs** | API调用日志 | 记录每次跨平台调用的详细信息 |
+
+---
+
+#### 4.6.7 查询结果示例
+
+**示例1：手机号查询结果（已注册）**
+
+```json
+{
+  "查询结果": "手机号已注册",
+  "手机号": "139****1234",
+  "平台UnionID": "UNI2026032212345678",
+  "注册时间": "2026-03-20 10:30:00",
+  "已绑定的系统": ["Java后端", "PHP后端"]
+}
+```
+
+**示例2：手机号查询结果（未注册）**
+
+```json
+{
+  "查询结果": "手机号未注册",
+  "手机号": "139****1234",
+  "操作建议": "需要分配新的平台UnionID"
+}
+```
+
+**示例3：绑定成功结果**
+
+```json
+{
+  "绑定结果": "绑定成功",
+  "平台UnionID": "UNI2026032212345678",
+  "PHP用户ID": "10001",
+  "已绑定的系统": ["Java后端", "PHP后端"],
+  "绑定时间": "2026-03-22 16:00:00"
+}
+```
+
+---
+
+### 4.7 案例七：跨平台订单查询（PHP后端查询都达网订单）
+
+#### 4.7.1 业务场景描述
+
+**场景背景**：
+一个用户在都达网平台的小程序中购买了商品（订单数据存在Java后端），现在用户登录PHP后端系统，想要查看这些订单。
+
+**业务需求**：
+- PHP后端需要从Java后端拉取该用户的订单数据
+- 在PHP后端展示给用户
+- 可能需要定期同步订单数据到PHP本地数据库
+
+---
+
+#### 4.7.2 查询逻辑链条
+
+**步骤1：PHP后端先确认用户身份**
+
+```
+用户在PHP后端登录（手机号 13900139001）
+    ↓
+PHP后端查询："这个用户的平台UnionID是什么？"
+    ↓
+Java后端返回："UNI2026032212345678"
+```
+
+**步骤2：PHP后端查询订单列表**
+
+```
+PHP后端向Java后端请求："查询 UnionID UNI2026032212345678 的所有订单"
+    ↓
+Java后端执行查询：
+  1. 通过UnionID找到Java用户ID
+  2. 查询该用户的所有订单
+  3. 按时间倒序排列
+  4. 返回第1页，每页20条
+    ↓
+Java后端返回订单列表给PHP后端
+```
+
+**步骤3：PHP后端展示订单**
+
+```
+PHP后端收到订单数据
+    ↓
+根据需要处理数据：
+  - 金额脱敏：100.**元（如果权限不足）
+  - 金额明文：100.00元（如果有高级权限）
+  - 翻译订单状态：paid → 已支付
+    ↓
+展示给用户
+```
+
+---
+
+#### 4.7.3 查询参数说明
+
+| 参数 | 说明 | 示例值 |
+|------|------|--------|
+| **platform_unionid** | 平台统一用户ID | UNI2026032212345678 |
+| **order_status** | 订单状态（可选） | paid（已支付） |
+| **start_time** | 开始时间（可选） | 2026-03-01 00:00:00 |
+| **end_time** | 结束时间（可选） | 2026-03-22 23:59:59 |
+| **page** | 页码 | 1 |
+| **page_size** | 每页数量 | 20 |
+
+---
+
+#### 4.7.4 返回数据结构
+
+**订单列表数据示例**：
+
+```json
+{
+  "总订单数": 50,
+  "当前页": 1,
+  "每页数量": 20,
+  "订单列表": [
+    {
+      "订单号": "2026032212345678",
+      "商户名称": "测试商户A",
+      "订单金额": "100.**元",
+      "实付金额": "90.**元",
+      "订单状态": "已支付",
+      "下单时间": "2026-03-22 10:30:00",
+      "支付时间": "2026-03-22 10:31:00"
+    },
+    {
+      "订单号": "2026032212345679",
+      "商户名称": "测试商户B",
+      "订单金额": "200.**元",
+      "实付金额": "180.**元",
+      "订单状态": "已完成",
+      "下单时间": "2026-03-21 15:20:00",
+      "支付时间": "2026-03-21 15:21:00"
+    }
+  ]
+}
+```
+
+---
+
+#### 4.7.5 订单状态对照表
+
+| 订单状态码 | 中文说明 | 含义 |
+|-----------|---------|------|
+| **pending** | 待支付 | 订单已创建，等待用户支付 |
+| **paid** | 已支付 | 用户已完成支付 |
+| **shipped** | 已发货 | 商户已发货 |
+| **completed** | 已完成 | 订单已完成 |
+| **refunded** | 已退款 | 订单已退款 |
+| **cancelled** | 已取消 | 订单已取消 |
+
+---
+
+#### 4.7.6 数据权限说明
+
+根据PHP后端拥有的API权限，返回的数据粒度不同：
+
+| 权限级别 | 能看到的内容 |
+|---------|-------------|
+| **order:read** | 订单号、商户名称、脱敏金额（100.**元）、订单状态、时间 |
+| **order:read-full** | 订单号、商户名称、明文金额（100.00元）、订单状态、时间、商品明细 |
+
+---
+
+#### 4.7.7 定时同步场景
+
+**场景说明**：
+PHP后端可能需要定期（比如每小时）从Java后端同步订单数据到本地数据库，方便快速查询和数据分析。
+
+**同步逻辑链条**：
+
+```
+定时任务触发（每小时执行）
+    ↓
+PHP后端查询："所有有更新的订单列表"
+    ↓
+Java后端返回：最近1小时内有变动的订单
+    ↓
+PHP后端批量处理：
+  1. 遍历每个订单
+  2. 检查本地数据库是否已存在
+  3. 如果不存在 → 插入新记录
+  4. 如果已存在 → 更新记录
+  5. 记录同步日志
+    ↓
+同步完成
+```
+
+**同步记录示例**：
+
+```
+同步时间：2026-03-22 16:00:00
+同步范围：2026-03-22 15:00:00 ~ 2026-03-22 16:00:00
+新增订单：15条
+更新订单：8条
+同步状态：成功
+```
+
+---
+
+### 4.8 案例八：跨平台支付信息查询
+
+#### 4.8.1 业务场景描述
+
+**场景背景**：
+用户在PHP后端系统中查看订单详情时，需要看到支付信息，包括：
+- 支付金额
+- 支付方式（微信支付、支付宝等）
+- 支付时间
+- 分账信息（平台抽成多少，商户收多少）
+
+**业务需求**：
+- PHP后端向Java后端查询支付详情
+- 支付信息属于敏感数据，需要权限控制
+- 金额信息可能需要脱敏展示
+
+---
+
+#### 4.8.2 查询逻辑链条
+
+```
+用户在PHP后端点击某个订单
+    ↓
+PHP后端向Java后端请求："查询订单 2026032212345678 的支付详情"
+    ↓
+Java后端执行：
+  1. 验证PHP后端的API权限
+  2. 查询订单支付记录
+  3. 根据权限决定是否脱敏
+  4. 返回支付详情
+    ↓
+PHP后端展示给用户
+```
+
+---
+
+#### 4.8.3 支付信息数据结构
+
+**支付详情示例**：
+
+```json
+{
+  "订单号": "2026032212345678",
+  "支付单号": "PAY_2026032212345678",
+  "商户ID": 1001,
+  "微信支付商户号": "1234567890",
+  "微信交易单号": "4200001234567890",
+  "支付金额": "90.00元",
+  "分账信息": {
+    "总金额": "90.00元",
+    "平台分账": "9.00元（10%）",
+    "商户收入": "81.00元（90%）"
+  },
+  "支付状态": "支付成功",
+  "支付时间": "2026-03-22 10:31:00",
+  "分账状态": "分账完成"
+}
+```
+
+---
+
+#### 4.8.4 支付状态对照表
+
+| 支付状态码 | 中文说明 | 含义 |
+|-----------|---------|------|
+| **pending** | 待支付 | 等待用户支付 |
+| **processing** | 支付中 | 用户正在支付 |
+| **success** | 支付成功 | 支付完成 |
+| **failed** | 支付失败 | 支付失败 |
+| **refunding** | 退款中 | 正在退款 |
+| **refunded** | 已退款 | 退款完成 |
+
+---
+
+#### 4.8.5 分账信息说明
+
+都达网平台与商户是"特约商户"关系，订单支付后需要进行分账：
+
+| 分账项 | 说明 | 示例 |
+|--------|------|------|
+| **订单总金额** | 用户实际支付的金额 | 90.00元 |
+| **平台分账比例** | 平台抽取的比例 | 10% |
+| **平台分账金额** | 平台抽成金额 | 9.00元 |
+| **商户收入金额** | 商户实际收到的金额 | 81.00元 |
+
+---
+
+#### 4.8.6 数据权限与脱敏
+
+| 权限级别 | 支付金额显示 |
+|---------|-------------|
+| **payment:read** | 90.**元（脱敏） |
+| **payment:read-full** | 90.00元（明文） |
+
+---
+
+### 4.9 案例九：跨平台商户信息查询
+
+#### 4.9.1 业务场景描述
+
+**场景背景**：
+PHP后端系统需要展示商户信息，比如：
+- 商户名称、联系方式
+- 经营范围、行业类型
+- 小程序信息
+- 审核状态
+
+**业务需求**：
+- PHP后端查询Java后端的商户数据
+- 可能需要批量查询多个商户
+- 敏感信息（手机号、营业执照号）需要脱敏
+
+---
+
+#### 4.9.2 查询逻辑链条
+
+```
+PHP后端向Java后端请求："查询商户ID 1001 的详细信息"
+    ↓
+Java后端执行：
+  1. 验证API权限
+  2. 查询商户基本信息
+  3. 查询关联的小程序信息
+  4. 根据权限脱敏敏感字段
+  5. 返回商户详情
+    ↓
+PHP后端展示给用户
+```
+
+---
+
+#### 4.9.3 商户信息数据结构
+
+**商户详情示例**：
+
+```json
+{
+  "商户ID": 1001,
+  "商户编码": "M001",
+  "商户名称": "测试商户A",
+  "商户类型": "小程序商户",
+  "联系人": "张三",
+  "联系电话": "139****0001",
+  "联系邮箱": "zhang***@example.com",
+  "公司信息": {
+    "公司名称": "测试公司A",
+    "营业执照号": "91110000**********",
+    "省份": "北京市",
+    "城市": "北京市",
+    "详细地址": "朝阳区***"
+  },
+  "小程序信息": {
+    "小程序名称": "测试小程序A",
+    "微信AppID": "wxaaaa1111aaaa1111",
+    "小程序状态": "已上线"
+  },
+  "审核状态": "已通过审核",
+  "商户状态": "正常营业"
+}
+```
+
+---
+
+#### 4.9.4 商户状态对照表
+
+| 状态码 | 中文说明 | 含义 |
+|--------|---------|------|
+| **pending** | 待审核 | 商户已提交资料，等待审核 |
+| **active** | 已激活 | 审核通过，正常营业 |
+| **suspended** | 暂停 | 暂停服务 |
+| **deleted** | 已删除 | 已删除 |
+
+---
+
+#### 4.9.5 批量查询场景
+
+**场景说明**：
+PHP后端需要一次性查询多个商户的信息，比如在列表页展示。
+
+**查询参数**：
+
+```json
+{
+  "merchant_ids": [1001, 1002, 1003, 1004, 1005]
+}
+```
+
+**返回结果**：
+
+```json
+{
+  "总数": 5,
+  "商户列表": [
+    {"商户ID": 1001, "商户名称": "测试商户A", "状态": "正常"},
+    {"商户ID": 1002, "商户名称": "测试商户B", "状态": "正常"},
+    {"商户ID": 1003, "商户名称": "测试商户C", "状态": "暂停"},
+    {"商户ID": 1004, "商户名称": "测试商户D", "状态": "正常"},
+    {"商户ID": 1005, "商户名称": "测试商户E", "状态": "待审核"}
+  ]
+}
+```
+
+---
+
+### 4.10 案例十：跨平台小程序信息查询
+
+#### 4.10.1 业务场景描述
+
+**场景背景**：
+PHP后端需要展示小程序的相关信息，比如：
+- 小程序名称、类型
+- 所属商户
+- 开发状态、上线状态
+- 使用的模板
+
+**业务需求**：
+- 查询单个小程序详情
+- 查询某个商户的所有小程序
+- 查询使用某个模板的所有小程序
+
+---
+
+#### 4.10.2 小程序信息数据结构
+
+**小程序详情示例**：
+
+```json
+{
+  "小程序ID": 2001,
+  "小程序编码": "MP001",
+  "小程序名称": "测试小程序A",
+  "微信AppID": "wxaaaa1111aaaa1111",
+  "所属商户ID": 1001,
+  "所属商户名称": "测试商户A",
+  "小程序类型": "电商小程序",
+  "使用模板ID": 1001,
+  "使用模板名称": "电商模板V1.0",
+  "开发状态": "已完成",
+  "上线状态": "已上线",
+  "发布时间": "2026-03-20 10:00:00",
+  "最近访问时间": "2026-03-22 15:30:00"
+}
+```
+
+---
+
+#### 4.10.3 小程序类型对照表
+
+| 类型码 | 中文说明 | 典型功能 |
+|--------|---------|---------|
+| **ecommerce** | 电商小程序 | 商品展示、购物车、订单管理 |
+| ** catering** | 餐饮小程序 | 菜单展示、在线点餐、外卖 |
+| **hotel** | 酒店小程序 | 房型展示、预订、入住管理 |
+| **beauty** | 美容小程序 | 预约、服务展示、会员管理 |
+| **education** | 教育小程序 | 课程展示、在线学习、作业管理 |
+
+---
+
+#### 4.10.4 开发状态对照表
+
+| 状态码 | 中文说明 | 含义 |
+|--------|---------|------|
+| **pending** | 待开发 | 需求已确认，等待开发 |
+| **developing** | 开发中 | 正在开发 |
+| **testing** | 测试中 | 开发完成，正在测试 |
+| **completed** | 已完成 | 开发和测试都完成 |
+| **online** | 已上线 | 已发布到微信平台 |
+
+---
+
+### 4.11 跨平台查询安全机制说明
+
+#### 4.11.1 认证机制
+
+**为什么要认证？**
+PHP后端调用Java后端API时，需要证明"我是合法的调用方"，防止被恶意调用。
+
+**认证方式：AppID + AppSecret + 签名**
+
+| 组件 | 说明 | 示例 |
+|------|------|------|
+| **AppID** | 应用的唯一标识 | php_backend_001 |
+| **AppSecret** | 应用的密钥（绝密） | abc123...（只有Java和PHP后端知道） |
+| **签名** | 根据AppID、时间戳、随机数、AppSecret生成的加密字符串 | MD5哈希值 |
+
+**认证流程**：
+
+```
+PHP后端准备调用Java后端API
+    ↓
+第1步：生成签名
+  - 准备参数：AppID、当前时间戳、随机数
+  - 拼接字符串 + AppSecret
+  - 计算MD5哈希值 → 得到签名
+    ↓
+第2步：发送请求
+  - 请求头中携带：AppID、时间戳、随机数、签名
+  - 发送到Java后端
+    ↓
+第3步：Java后端验证签名
+  - 根据AppID查询AppSecret
+  - 用相同的算法重新计算签名
+  - 对比签名是否一致
+    ↓
+第4步：验证通过 → 执行业务逻辑
+    验证失败 → 返回401错误
+```
+
+---
+
+#### 4.11.2 限流机制
+
+**为什么要限流？**
+防止某个后端系统调用频率过高，影响Java后端的稳定性。
+
+**限流策略**：
+
+| 限流维度 | 说明 | 默认限制 |
+|---------|------|---------|
+| **每秒限流** | 1秒内最多调用次数 | 100次/秒 |
+| **每分钟限流** | 1分钟内最多调用次数 | 1000次/分钟 |
+| **每小时限流** | 1小时内最多调用次数 | 10000次/小时 |
+
+**超过限流会怎样？**
+
+```
+PHP后端调用频率过高
+    ↓
+Java后端检测到超过限流
+    ↓
+返回429错误（Too Many Requests）
+    ↓
+PHP后端等待一段时间后重试
+```
+
+---
+
+#### 4.11.3 数据脱敏机制
+
+**为什么要脱敏？**
+保护用户隐私，不同权限的后端系统看到的数据粒度不同。
+
+**脱敏规则**：
+
+| 数据类型 | 明文示例 | 脱敏示例 | 脱敏规则 |
+|---------|---------|---------|---------|
+| **手机号** | 13812345678 | 138****5678 | 保留前3位和后4位 |
+| **身份证号** | 110101199001011234 | 110***********1234 | 保留前3位和后4位 |
+| **银行卡号** | 6222021234567890123 | 6222***********0123 | 保留前4位和后4位 |
+| **订单金额** | 100.00元 | 100.**元 | 整数部分+.**元 |
+| **邮箱** | zhangsan@example.com | zha***@example.com | 前3个字符+*** |
+
+**权限级别对照**：
+
+| 权限 | 手机号 | 订单金额 | 身份证号 |
+|------|--------|---------|---------|
+| **基础权限** | 不显示 | 脱敏 | 不显示 |
+| **中级权限** | 脱敏 | 脱敏 | 脱敏 |
+| **高级权限** | 明文 | 明文 | 脱敏 |
+| **完全权限** | 明文 | 明文 | 明文 |
+
+---
+
+#### 4.11.4 IP白名单/黑名单
+
+**IP白名单**：
+只允许特定IP地址调用API，其他IP全部拒绝。
+
+**IP黑名单**：
+禁止特定IP地址调用API，其他IP全部允许。
+
+| 机制 | 使用场景 | 示例 |
+|------|---------|------|
+| **白名单** | 高安全要求的场景 | 只允许公司办公室IP调用 |
+| **黑名单** | 防止恶意IP | 封禁频繁调用的恶意IP |
+
+---
+
+## 五、扩展性设计
+
+### 5.1 JSON字段应用
+
+为了增强扩展性，以下字段使用JSON格式存储：
+
+#### 示例1: wechat_openid_list (多OpenID存储)
+
+```json
+{
+  "mini_program": {
+    "wx_appid_001": "oAAAAA_xxxxx",
+    "wx_appid_002": "oBBBBB_yyyyy"
+  },
+  "mobile_app": {
+    "wxcccc3333": "oCCCCC_zzzzz"
+  },
+  "website": {
+    "wxdddd4444": "oDDDDD_wwwww"
+  }
+}
+```
+
+#### 示例2: service_content_types (服务内容类型)
+
+```json
+[
+  {
+    "first_category": "餐饮",
+    "second_category": "快餐",
+    "category_code": "CATERING_001"
+  },
+  {
+    "first_category": "餐饮",
+    "second_category": "饮品",
+    "category_code": "CATERING_002"
+  }
+]
+```
+
+#### 示例3: profit_sharing_rules (分账规则)
+
+```json
+{
+  "platform_rate": 0.10,
+  "platform_amount": 10.00,
+  "merchant_rate": 0.90,
+  "merchant_amount": 90.00,
+  "platform_account": "platform_account_001",
+  "merchant_account": "merchant_account_001"
+}
+```
+
+### 5.2 分表分库策略
+
+#### 用户表分片（水平分片）
+
+```
+分片规则: user_shard = user_id % 100
+表名: users_00, users_01, ..., users_99
+
+示例查询:
+
+**查询1：根据user_id查询**
+
+| 查询步骤 | 说明 |
+|---------|------|
+| 第1步 | 计算分片号：user_id % 100 = 1234567890 % 100 = 90 |
+| 第2步 | 确定表名：users_90 |
+| 第3步 | 执行查询：从users_90表中查询 id = 1234567890 的记录 |
+
+**查询2：根据phone查询（两种方法）**
+
+*方法1：使用映射表（推荐）*
+
+| 查询步骤 | 说明 |
+|---------|------|
+| 第1步 | 查询phone_shard_mapping表，WHERE phone = '13900139000' |
+| 第2步 | 返回结果：user_shard = 15（该手机号在users_15表中） |
+| 第3步 | 直接查询users_15表，WHERE phone = '13900139000' |
+
+*方法2：遍历所有分片（不推荐，性能差）*
+
+| 查询步骤 | 说明 |
+|---------|------|
+| 第1步 | 遍历users_00到users_99，共100张表 |
+| 第2步 | 每张表都执行：WHERE phone = '13900139000' |
+| 第3步 | 返回找到的那条记录 |
+```
+
+#### 订单表分片（按时间分片）
+
+```
+分片规则: 按月分片
+表名: payment_orders_202601, payment_orders_202602, payment_orders_202603, ...
+
+示例查询:
+
+**查询1：查询3月份订单**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | payment_orders_202603（2026年3月的订单表） |
+| 筛选条件 | order_time >= '2026-03-01' AND order_time < '2026-04-01' |
+| 说明 | 只查询3月份的订单数据 |
+
+**查询2：查询今日订单**
+
+| 查询项 | 说明 |
+|-------|------|
+| 数据表 | payment_orders_202603（当前月份的订单表） |
+| 筛选条件 | order_time >= '2026-03-22'（今天） |
+| 说明 | 查询今天0点到现在所有的订单 |
+```
+
+### 5.3 冷热数据分离
+
+```
+热数据表（频繁访问）:
+- users_XX (近6个月活跃用户)
+- payment_orders_YYYYMM (近3个月订单)
+- merchant_users (活跃用户)
+
+冷数据表（归档存储）:
+- users_archive (超过6个月未活跃)
+- payment_orders_archive (超过3个月订单)
+- api_call_logs_archive (超过6个月日志)
+
+归档任务（Cron Job）:
+- 每周日凌晨2点执行归档
+- 自动将冷数据从热表迁移到归档表
+```
+
+---
+
+## 六、数据安全与加密
+
+### 6.1 敏感字段加密
+
+```sql
+-- 1. 微信敏感信息加密（AES-256）
+wechat_appsecret VARCHAR(500)  -- AES-256加密
+wechat_access_token VARCHAR(500) -- AES-256加密
+wechat_refresh_token VARCHAR(500) -- AES-256加密
+mini_app_session_key VARCHAR(500) -- AES-256加密
+
+-- 2. 支付敏感信息加密（AES-256）
+wechat_pay_api_key VARCHAR(500) -- AES-256加密
+wechat_pay_key VARCHAR(500) -- AES-256加密
+alipay_private_key TEXT -- AES-256加密
+
+-- 3. 用户敏感信息加密
+password VARCHAR(255) -- BCrypt加密
+phone VARCHAR(20) -- 可选AES加密（根据业务需求）
+```
+
+### 6.2 数据脱敏
+
+```
+日志表中敏感信息脱敏:
+- AppID: wx****8888
+- AppSecret: ****** (完全隐藏)
+- 手机号: 139****0000
+- 身份证: 18*************01
+- 银行卡: 6222***********1234
+```
+
+---
+
+## 📚 附录
+
+### A. 查询性能优化建议
+
+1. **索引优化**
+   - 为频繁查询的字段建立索引
+   - 使用组合索引优化多条件查询
+   - 避免在索引列上使用函数
+
+2. **分页优化**
+   - 使用 `LIMIT` + `OFFSET` 实现分页
+   - 大数据量时使用游标分页（基于ID）
+
+3. **缓存策略**
+   - 热点数据缓存到Redis
+   - 缓存失效时间合理设置
+   - 使用缓存预热提升性能
+
+### B. 修改记录
+
+| 版本 | 日期 | 修改内容 | 修改人 |
+|------|------|---------|--------|
+| v1.0 | 2026-03-22 | 初始版本，完成查询案例设计 | DudaNexus架构组 |
+
+---
+
+**文档结束**

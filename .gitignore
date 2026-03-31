@@ -1,82 +1,46 @@
-# Maven
-target/
-pom.xml.tag
-pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-release.properties
-dependency-reduced-pom.xml
-buildNumber.properties
-.mvn/timing.properties
-.mvn/wrapper/maven-wrapper.jar
-
-# IntelliJ IDEA
+# IDE
 .idea/
-*.iws
-*.iml
-*.ipr
-out/
-
-# Eclipse
-.classpath
-.project
-.settings/
-.metadata
-bin/
-tmp/
-*.tmp
-*.bak
-*.swp
-*~.nib
-local.properties
-.loadpath
-
-# VS Code
 .vscode/
-*.code-workspace
+*.iml
 
 # macOS
 .DS_Store
-.AppleDouble
-.LSOverride
-Icon
-._*
+.Trash/
+
+# Java
+target/
+.mvn/
+*.jar
 
 # Logs
 logs/
 *.log
 
+# Claude
+.claude/
+
+# User home (exclude large directories)
+.EventSDK/
+.IdentityService/
+.adobe/
+.android/
+.cache/
+.chelper/
+.cocoapods/
+.colima/
+.config/
+.copilot/
+.dart*
+.flutter*
+.gradle/
+.local/
+
 # Temp files
 *.tmp
-*.bak
+*.temp
 *.swp
 *~
 
-# Spring Boot
-HELP.md
-!.mvn/wrapper/maven-wrapper.jar
-
-# User specific
-.m2/
-.env
-*.env.local
-*.env.*.local
-accesskey.txt
-*.txt
-
-# Backup files
-*.backup
-*.bak
-
-# Maven 编译产物（JAR文件）
-*.jar
-*.war
-*.ear
-target/
-
-# Docker 构建时复制的 JAR
-duda-*/duda-*/*.jar
-duda-*/duda-*/*.jar.original
-
-# Docker 相关
-docker-compose.override.yml
+# Test documentation (exclude from code repo)
+*.md
+!README.md

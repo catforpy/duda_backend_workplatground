@@ -1,0 +1,506 @@
+## 1. bucket_billing_config (Bucket计费配置表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(100) | NO | UNI | | | Bucket名称 |
+ | user_id | bigint | NO | MUL | | | 用户ID |
+ | tenant_id | bigint | YES | MUL | | | 租户ID |
+ | billing_cycle | varchar(20) | YES | | monthly | | 计费周期daily-日/weekly-周/monthly-月 |
+ | unit_price | decimal(10,4) | YES | | 0.0000 | | 单价(元/GB/月) |
+ | traffic_unit_price | decimal(10,4) | YES | | 0.0000 | | 流量单价(元/GB) |
+ | free_quota | bigint | YES | | 0 | | 免费配额(字节) |
+ | low_balance_threshold | decimal(10,2) | YES | | 10.00 | | 余额阈值(元) |
+ | quota_warning_threshold | int | YES | | 80 | | 配额警告阈值(百分比) |
+ | overdraft_allowed | tinyint | YES | | 0 | | 是否允许透支0-否 1-是 |
+ | max_overdraft | decimal(10,2) | YES | | 0.00 | | 最大透支金额 |
+ | notification_enabled | tinyint | YES | | 1 | | 是否通知0-否 1-是 |
+ | notification_email | varchar(200) | YES | | NULL | | 邮箱 |
+ | notification_mobile | varchar(20) | YES | | NULL | | 手机号 |
+ | webhook_url | varchar(500) | YES | | NULL | | Webhook通知URL |
+ | balance | decimal(10,2) | YES | | 0.00 | | 当前余额 |
+ | status | varchar(20) | YES | MUL | ACTIVE | | 状态ACTIVE-正常/SUSPENDED-暂停/ARREARS-欠费 |
+ | suspend_reason | varchar(500) | YES | | NULL | | 暂停原因 |
+ | created_by | bigint | YES | | NULL | | 创建人 |
+ | created_time | datetime | YES | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_by | bigint | YES | | NULL | | 更新人 |
+ | updated_time | datetime | YES | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+ | is_deleted | tinyint | YES | | 0 | | 是否删除0-否 1-是 |
+
+ ---
+
+ ## 2. bucket_billing_record (Bucket计费记录表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(100) | NO | MUL | | | Bucket名称 |
+ | user_id | bigint | NO | MUL | | | 用户ID |
+ | tenant_id | bigint | YES | MUL | | | 租户ID |
+ | billing_cycle | varchar(20) | NO | | | | 计费周期daily/weekly/monthly |
+ | cycle_start | date | NO | | | | 周期开始日期 |
+ | cycle_end | date | NO | MUL | | | 周期结束日期 |
+ | avg_storage_size | bigint | YES | | 0 | | 平均存储大小(字节) |
+ | total_traffic | bigint | YES | | 0 | | 总流量(字节) |
+ | total_requests | int | YES | | 0 | | 总请求数 |
+ | total_files | int | YES | | 0 | | 文件数 |
+ | storage_fee | decimal(10,2) | YES | | 0.00 | | 存储费用 |
+ | traffic_fee | decimal(10,2) | YES | | 0.00 | | 流量费用 |
+ | request_fee | decimal(10,2) | YES | | 0.00 | | 请求费用 |
+ | other_fee | decimal(10,2) | YES | | 0.00 | | 其他费用 |
+ | discount_fee | decimal(10,2) | YES | | 0.00 | | 折扣金额 |
+ | total_fee | decimal(10,2) | YES | | 0.00 | | 总费用 |
+ | payment_status | varchar(20) | YES | | UNPAID | | 支付状态UNPAID-未付/PAID-已付/OVERDUE-逾期 |
+ | payment_time | datetime | YES | | NULL | | 支付时间 |
+ | payment_method | varchar(50) | YES | | NULL | | 支付方式alipay/wechat/bank_transfer |
+ | transaction_id | varchar(100) | YES | | NULL | | 交易流水号 |
+ | remark | varchar(500) | YES | | NULL | | 备注 |
+ | created_time | datetime | YES | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | YES | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+ | is_deleted | tinyint | YES | | 0 | | 是否删除0-否 1-是 |
+
+ ---
+
+ ## 3. bucket_config (Bucket配置表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(100) | NO | UNI | | | Bucket名称(全局唯一) |
+ | bucket_display_name | varchar(200) | YES | | NULL | | Bucket显示名称 |
+ | storage_type | varchar(20) | NO | MUL | | | 存储类型aliyun-oss/tencent-cos/qiniu-kodo/minio |
+ | region | varchar(50) | NO | | | | 区域cn-hangzhou/ap-guangzhou等 |
+ | user_id | bigint | NO | MUL | | | 用户ID |
+ | user_type | varchar(20) | NO | MUL | | | 用户类型platform-admin/service_provider/platform_account |
+ | tenant_id | bigint | YES | | | | 租户ID(服务商和账号使用) |
+ | storage_class | varchar(20) | YES | | STANDARD | | 存储类型STANDARD/IA/ARCHIVE/COLD_ARCHIVE |
+ | data_redundancy_type | varchar(20) | YES | | LRS | | 数据冗余类型LRS/ZRS |
+ | acl_type | varchar(20) | NO | | PRIVATE | | ACL类型PRIVATE/PUBLIC_READ/PUBLIC_READ_WRITE |
+ | max_file_size | bigint | YES | | 10737418240 | | 最大文件大小(字节)默认10GB |
+ | max_file_count | int | YES | | 100000 | | 最大文件数 |
+ | max_storage_size | bigint | YES | | NULL | | 最大存储空间(字节) |
+ | allowed_file_types | varchar(500) | YES | | NULL | | 允许的文件类型(扩展名,逗号分隔) |
+ | blocked_file_types | varchar(500) | YES | | NULL | | 禁止的文件类型(扩展名,逗号分隔) |
+ | domain_name | varchar(200) | YES | | NULL | | 自定义域名 |
+ | cdn_enabled | tinyint | YES | | 0 | | 是否启用CDN0-否 1-是 |
+ | cdn_domain | varchar(200) | YES | | NULL | | CDN加速域名 |
+ | versioning_enabled | tinyint | YES | | 0 | | 是否启用版本控制0-否 1-是 |
+ | cors_enabled | tinyint | YES | | 0 | | 是否启用CORS0-否 1-是 |
+ | watermark_enabled | tinyint | YES | | 0 | | 是否启用水印0-否 1-是 |
+ | encryption_enabled | tinyint | YES | | 0 | | 是否启用加密0-否 1-是 |
+ | lifecycle_enabled | tinyint | YES | | 0 | | 是否启用生命周期0-否 1-是 |
+ | transfer_acceleration_enabled | tinyint | YES | | 0 | | 是否启用传输加速0-否 1-是 |
+ | current_file_count | int | YES | | 0 | | 当前文件数 |
+ | current_storage_size | bigint | YES | | 0 | | 当前存储空间(字节) |
+ | storage_used_quota | bigint | YES | | NULL | | 存储使用配额 |
+ | access_key_id | varchar(500) | YES | | NULL | | AccessKey ID(需AES加密) |
+ | access_key_secret | varchar(500) | YES | | NULL | | AccessKey Secret(需AES加密) |
+ | secret_key | varchar(500) | YES | | NULL | | MinIO的SecretKey(需AES加密) |
+ | endpoint | varchar(200) | YES | | NULL | | 终端节点 |
+ | sts_role_arn | varchar(200) | YES | | NULL | | STS角色ARN |
+ | sts_external_id | varchar(200) | YES | | NULL | | STS外部ID |
+ | status | varchar(20) | NO | MUL | ACTIVE | | 状态ACTIVE/INACTIVE/FROZEN/DELETING |
+ | auto_renew_enabled | tinyint | YES | | 0 | | 是否自动续费(用于付费存储) |
+ | tags | json | YES | | NULL | | 标签JSON格式 |
+ | category | varchar(50) | YES | MUL | NULL | | 分类documents/images/videos/audits/others |
+ | description | varchar(500) | YES | | NULL | | Bucket描述 |
+ | created_by | bigint | YES | | NULL | | 创建人 |
+ | created_time | datetime | YES | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_by | bigint | YES | | NULL | | 更新人 |
+ | updated_time | datetime | YES | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+ | deleted_time | datetime | YES | | NULL | | 删除时间 |
+ | is_deleted | tinyint | YES | | 0 | | 是否删除0-否 1-是 |
+ | lifecycle_config | varchar(1000) | YES | | NULL | | 生命周期配置 |
+ | cors_config | varchar(1000) | YES | | NULL | | CORS配置 |
+ | referer_config | varchar(1000) | YES | | NULL | | 防盗链配置 |
+ | bucket_policy | text | YES | | NULL | | Bucket策略(JSON格式) |
+ | replication_config | varchar(500) | YES | | NULL | | 跨区域复制配置 |
+ | access_monitor_config | varchar(500) | YES | | NULL | | 访问监控配置 |
+ | inventory_config | varchar(500) | YES | | NULL | | 清单配置 |
+ | website_config | varchar(500) | YES | | NULL | | 静态网站配置 |
+ | logging_config | varchar(500) | YES | | NULL | | 日志配置 |
+ | worm_config | varchar(500) | YES | | NULL | | WORM合规保留配置 |
+
+ ---
+
+ ## 4. bucket_statistics (Bucket统计表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(100) | NO | UNI | | | Bucket名称 |
+ | region | varchar(50) | YES | MUL | | | 区域 |
+ | storage_type | varchar(20) | YES | MUL | | | 存储类型STANDARD/IA/ARCHIVE |
+ | total_file_count | int | YES | | 0 | | 总文件数 |
+ | total_storage_size | bigint | YES | | 0 | | 总存储空间(字节) |
+ | image_count | int | YES | | 0 | | 图片文件数 |
+ | video_count | int | YES | | 0 | | 视频文件数 |
+ | document_count | int | YES | | 0 | | 文档文件数 |
+ | other_count | int | YES | | 0 | | 其他文件数 |
+ | total_traffic_bytes | bigint | YES | | 0 | | 总流量(字节) |
+ | upload_traffic_bytes | bigint | YES | | 0 | | 上传流量(字节) |
+ | download_traffic_bytes | bigint | YES | | 0 | | 下载流量(字节) |
+ | acl_type | varchar(20) | YES | | NULL | | ACL类型 |
+ | bucket_policy | text | YES | | NULL | | Bucket Policy配置(JSON格式) |
+ | cors_enabled | tinyint | YES | | 0 | | 是否启用CORS0-否 1-是 |
+ | cors_config | text | YES | | NULL | | CORS配置(JSON格式) |
+ | referer_enabled | tinyint | YES | | 0 | | 是否启用防盗链0-否 1-是 |
+ | referer_config | text | YES | | NULL | | 防盗链配置(JSON格式) |
+ | lifecycle_config | text | YES | | NULL | | 生命周期配置(JSON格式) |
+ | versioning_enabled | tinyint | YES | | 0 | | 是否启用版本控制0-否 1-是 |
+ | logging_config | text | YES | | NULL | | 日志配置(JSON格式) |
+ | website_config | text | YES | | NULL | | 静态网站配置(JSON格式) |
+ | website_enabled | tinyint | YES | | 0 | | 是否启用静态网站0-否 1-是 |
+ | worm_enabled | tinyint | YES | | 0 | | 是否启用WORM0-否 1-是 |
+ | replication_config | text | YES | | NULL | | 跨区域复制配置(JSON格式) |
+ | transfer_acceleration_enabled | tinyint | YES | | 0 | | 是否启用传输加速0-否 1-是 |
+ | access_monitor_enabled | tinyint | YES | | 0 | | 是否启用访问监控0-否 1-是 |
+ | domain_name | varchar(200) | YES | | NULL | | 自定义域名 |
+ | cdn_enabled | tinyint | YES | | 0 | | 是否启用CDN0-否 1-是 |
+ | allowed_file_types | varchar(500) | YES | | NULL | | 允许的文件类型 |
+ | blocked_file_types | varchar(500) | YES | | NULL | | 禁止的文件类型 |
+ | max_file_size | bigint | YES | | NULL | | 最大文件大小 |
+ | max_file_count | int | YES | | NULL | | 最大文件数 |
+ | storage_cost | decimal(10,2) | YES | | 0.00 | | 存储费用 |
+ | traffic_cost | decimal(10,2) | YES | | 0.00 | | 流量费用 |
+ | request_cost | decimal(10,2) | YES | | 0.00 | | 请求费用 |
+ | total_cost | decimal(10,2) | YES | | 0.00 | | 总费用 |
+ | last_sync_time | datetime | YES | | NULL | | 最后同步时间 |
+ | last_upload_time | datetime | YES | | NULL | | 最后上传时间 |
+ | last_download_time | datetime | YES | | NULL | | 最后下载时间 |
+ | last_delete_time | datetime | YES | | NULL | | 最后删除时间 |
+ | tags | varchar(200) | YES | | NULL | | 标签逗号分隔 |
+ | status | varchar(20) | YES | MUL | ACTIVE | | 状态ACTIVE/SUSPENDED/DELETED |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | NO | MUL | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+
+ ---
+
+ ## 5. bucket_storage_log (Bucket存储日志表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(100) | NO | MUL | | | Bucket名称 |
+ | user_id | bigint | NO | MUL | | | 用户ID |
+ | tenant_id | bigint | YES | MUL | | | 租户ID |
+ | file_count | int | YES | | 0 | | 文件数 |
+ | storage_size | bigint | YES | | 0 | | 存储空间(字节) |
+ | storage_quota | bigint | YES | | NULL | | 存储配额(字节) |
+ | usage_percentage | decimal(5,2) | YES | | NULL | | 使用率百分比 |
+ | standard_size | bigint | YES | | 0 | | 标准存储大小(字节) |
+ | ia_size | bigint | YES | | 0 | | 低频存储大小(字节) |
+ | archive_size | bigint | YES | | 0 | | 归档存储大小(字节) |
+ | cold_archive_size | bigint | YES | | 0 | | 冷归档存储大小(字节) |
+ | stat_date | date | NO | MUL | | | 统计日期 |
+ | stat_hour | tinyint | YES | | NULL | | 统计小时0-23NULL表示日统计 |
+ | created_time | datetime | YES | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+
+ ---
+
+ ## 6. bucket_traffic_log (Bucket流量日志表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(100) | NO | MUL | | | Bucket名称 |
+ | user_id | bigint | NO | MUL | | | 用户ID |
+ | tenant_id | bigint | YES | MUL | | | 租户ID |
+ | upload_traffic | bigint | YES | | 0 | | 上传流量(字节) |
+ | download_traffic | bigint | YES | | 0 | | 下载流量(字节) |
+ | total_traffic | bigint | YES | | 0 | | 总流量(字节) |
+ | request_count | int | YES | | 0 | | 请求数 |
+ | upload_count | int | YES | | 0 | | 上传数 |
+ | download_count | int | YES | | 0 | | 下载数 |
+ | head_count | int | YES | | 0 | | HEAD请求数 |
+ | other_count | int | YES | | 0 | | 其他请求数 |
+ | image_traffic | bigint | YES | | 0 | | 图片流量(字节) |
+ | video_traffic | bigint | YES | | 0 | | 视频流量(字节) |
+ | document_traffic | bigint | YES | | 0 | | 文档流量(字节) |
+ | other_traffic | bigint | YES | | 0 | | 其他流量(字节) |
+ | stat_date | date | NO | MUL | | | 统计日期 |
+ | stat_hour | tinyint | YES | | NULL | | 统计小时0-23NULL表示日统计 |
+ | created_time | datetime | YES | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+
+ ---
+
+ ## 7. content_detection_record (内容检测记录表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | task_id | varchar(255) | NO | UNI | | | 任务ID |
+ | bucket_name | varchar(255) | NO | MUL | | | 存储桶名 |
+ | object_key | varchar(1024) | NO | | | | 对象键 |
+ | detection_type | varchar(32) | NO | MUL | | | 检测类型 |
+ | status | varchar(32) | NO | MUL | | | 状态 |
+ | porn_label | varchar(32) | YES | | NULL | | 色情标签 |
+ | porn_score | decimal(5,2) | YES | | NULL | | 色情评分 |
+ | porn_confidence | decimal(5,2) | YES | | NULL | | 置信度 |
+ | politics_label | varchar(32) | YES | | NULL | | 政治标签 |
+ | politics_score | decimal(5,2) | YES | | NULL | | 政治评分 |
+ | politics_confidence | decimal(5,2) | YES | | NULL | | 置信度 |
+ | terrorism_label | varchar(32) | YES | | NULL | | 暴恐标签 |
+ | terrorism_score | decimal(5,2) | YES | | NULL | | 暴恐评分 |
+ | terrorism_confidence | decimal(5,2) | YES | | NULL | | 置信度 |
+ | ad_label | varchar(32) | YES | | NULL | | 广告标签 |
+ | ad_score | decimal(5,2) | YES | | NULL | | 广告评分 |
+ | ad_confidence | decimal(5,2) | YES | | NULL | | 置信度 |
+ | is_aigc | tinyint | YES | | 0 | | 是否AIGC生成 |
+ | aigc_confidence | decimal(5,2) | YES | | NULL | | AIGC置信度 |
+ | aigc_tool_type | varchar(64) | YES | | NULL | | AIGC工具类型 |
+ | risk_level | varchar(16) | YES | MUL | | | 风险等级 |
+ | action_taken | varchar(32) | YES | | NULL | | 采取的操作 |
+ | error_message | varchar(1024) | YES | | NULL | | 错误信息 |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+
+ ---
+
+ ## 8. file_access_log (文件访问日志表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(255) | NO | MUL | | | 存储桶名 |
+ | object_key | varchar(1024) | NO | | | | 对象键 |
+ | operation | varchar(20) | NO | MUL | | | 操作类型 |
+ | user_id | bigint | YES | MUL | | | 用户ID |
+ | user_shard | tinyint | YES | | NULL | | 用户ID分片 |
+ | client_ip | varchar(50) | YES | | NULL | | 客户端IP |
+ | device_id | varchar(100) | YES | | NULL | | 设备ID |
+ | user_agent | varchar(500) | YES | | NULL | | User-Agent |
+ | file_size | bigint | YES | | NULL | | 文件大小(字节) |
+ | result_status | varchar(20) | NO | MUL | | | 结果状态 |
+ | error_message | varchar(500) | YES | | NULL | | 错误信息 |
+ | start_time | datetime | NO | MUL | | | 开始时间 |
+ | end_time | datetime | NO | | | | 结束时间 |
+ | duration_ms | bigint | YES | | NULL | | 耗时(毫秒) |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+
+ ---
+
+ ## 9. file_statistics (文件统计表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(255) | NO | MUL | | | 存储桶名 |
+ | stat_date | date | NO | MUL | | | 统计日期 |
+ | stat_type | varchar(20) | NO | | | | 统计类型 |
+ | total_files | bigint | YES | | 0 | | 总文件数 |
+ | total_size | bigint | YES | | 0 | | 总大小 |
+ | upload_count | bigint | YES | | 0 | | 上传数 |
+ | download_count | bigint | YES | | 0 | | 下载数 |
+ | traffic_upload | bigint | YES | | 0 | | 上传流量 |
+ | traffic_download | bigint | YES | | 0 | | 下载流量 |
+ | new_files | bigint | YES | | 0 | | 新增文件数 |
+ | deleted_files | bigint | YES | | 0 | | 删除文件数 |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+
+ ---
+
+ ## 10. object_metadata (对象元数据表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(255) | NO | MUL | | | 存储桶名 |
+ | object_key | varchar(1024) | NO | | | | 对象键 |
+ | version_id | varchar(255) | YES | | NULL | | 版本ID |
+ | file_size | bigint | YES | | NULL | | 文件大小(字节) |
+ | file_name | varchar(500) | YES | | NULL | | 文件名 |
+ | content_type | varchar(255) | YES | | NULL | | MIME类型 |
+ | content_md5 | varchar(32) | YES | | NULL | | MD5值 |
+ | crc64 | bigint | YES | | NULL | | CRC64校验码 |
+ | storage_class | varchar(20) | YES | | STANDARD | | 存储类型 |
+ | object_type | varchar(20) | YES | | NORMAL | | 对象类型 |
+ | is_directory | tinyint | YES | | 0 | | 是否目录 |
+ | is_symlink | tinyint | YES | | 0 | | 是否软链接 |
+ | symlink_target | varchar(1024) | YES | | NULL | | 软链接目标 |
+ | acl | varchar(20) | YES | | PRIVATE | | ACL权限 |
+ | upload_id | varchar(255) | YES | | NULL | | 分片上传ID |
+ | part_count | int | YES | | NULL | | 分片数量 |
+ | position | bigint | YES | | NULL | | 位置 |
+ | restore_status | varchar(20) | YES | | NULL | | 恢复状态 |
+ | expiry_time | datetime | YES | | NULL | | 过期时间 |
+ | etag | varchar(255) | YES | | NULL | | 对象ETag |
+ | user_metadata | json | YES | | NULL | | 用户自定义元数据 |
+ | tags | json | YES | | NULL | | 对象标签 |
+ | upload_ip | varchar(50) | YES | | NULL | | 上传IP |
+ | upload_time | datetime | YES | MUL | | | 上传时间 |
+ | last_access_time | datetime | YES | | NULL | | 最后访问时间 |
+ | access_count | bigint | YES | | 0 | | 访问次数 |
+ | download_count | bigint | YES | | 0 | | 下载次数 |
+ | status | varchar(20) | YES | MUL | active | | 状态 |
+ | created_by | bigint | YES | MUL | | NULL | | 创建者ID |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+
+ ---
+
+ ## 11. resume_upload_record (断点续传记录表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | record_id | varchar(64) | NO | UNI | | | 记录唯一ID |
+ | bucket_name | varchar(255) | NO | MUL | | | 存储桶名 |
+ | object_key | varchar(1024) | NO | | | | 对象键 |
+ | local_file_path | varchar(500) | NO | | | | 本地文件路径 |
+ | file_size | bigint | NO | | | | 文件大小(字节) |
+ | part_size | bigint | YES | | NULL | | 分片大小 |
+ | total_part_count | int | YES | | NULL | | 总分片数 |
+ | uploaded_parts | json | YES | | NULL | | 已上传分片 |
+ | upload_status | varchar(20) | NO | MUL | | | 上传状态 |
+ | user_id | bigint | NO | MUL | | | 用户ID |
+ | user_shard | tinyint | NO | | | | 用户ID分片 |
+ | client_type | varchar(20) | YES | | NULL | | 客户端类型 |
+ | device_id | varchar(100) | YES | | NULL | | 设备ID |
+ | concurrent_threads | int | YES | | 3 | | 并发线程数 |
+ | start_time | datetime | YES | | NULL | | 开始时间 |
+ | complete_time | datetime | YES | | NULL | | 完成时间 |
+ | last_update_time | datetime | YES | | NULL | | 最后更新时间 |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+
+ ---
+
+ ## 12. security_config (安全配置表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(255) | NO | UNI | | | 存储桶名 |
+ | encryption_type | varchar(32) | YES | | NULL | | 加密类型 |
+ | kms_key_id | varchar(255) | YES | | NULL | | KMS密钥ID |
+ | enable_encryption | tinyint | YES | | 0 | | 是否启用服务端加密 |
+ | enable_client_encryption | tinyint | YES | | 0 | | 是否启用客户端加密 |
+ | tls_version | varchar(16) | YES | | TLSv1.3 | | TLS版本 |
+ | integrity_check_type | varchar(16) | YES | | CRC64 | | 完整性校验类型 |
+ | enable_content_detection | tinyint | YES | | 0 | | 是否启用内容检测 |
+ | enable_virus_scan | tinyint | YES | | 0 | | 是否启用病毒扫描 |
+ | enable_sensitive_data_scan | tinyint | YES | | 0 | | 是否启用敏感数据扫描 |
+ | content_detection_threshold | decimal(5,2) | YES | | 90.00 | | 内容检测阈值 |
+ | virus_scan_action | varchar(32) | YES | | DELETE | | 病毒扫描操作 |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+
+ ---
+
+ ## 13. sensitive_data_detail (敏感数据详情表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | scan_task_id | varchar(255) | NO | MUL | | | 扫描任务ID |
+ | bucket_name | varchar(255) | NO | | | | 存储桶名 |
+ | object_key | varchar(1024) | NO | | | | 对象键 |
+ | data_type | varchar(64) | NO | MUL | | | 敏感数据类型 |
+ | data_level | varchar(8) | NO | | | | 数据级别 |
+ | data_count | bigint | YES | | 0 | | 数据数量 |
+ | data_sample | text | YES | | NULL | | 数据样本 |
+ | occurrence_position | json | YES | | NULL | | 出现位置 |
+ | risk_level | varchar(16) | YES | MUL | | | 风险等级 |
+ | action_taken | varchar(32) | YES | | NULL | | 采取的操作 |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+
+ ---
+
+ ## 14. sensitive_data_scan_record (敏感数据扫描记录表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | task_id | varchar(255) | NO | UNI | | | 任务ID |
+ | bucket_name | varchar(255) | NO | | | | 存储桶名 |
+ | scan_prefix | varchar(1024) | YES | | NULL | | 扫描前缀 |
+ | status | varchar(32) | NO | MUL | | | 状态 |
+ | total_files | bigint | YES | | 0 | | 总文件数 |
+ | scanned_files | bigint | YES | | 0 | | 已扫描文件数 |
+ | sensitive_files_found | bigint | YES | | 0 | | 发现敏感文件数 |
+ | total_scan_size | bigint | YES | | 0 | | 总扫描大小 |
+ | sensitive_data_types | json | YES | | NULL | | 敏感数据类型 |
+ | start_time | datetime | YES | | NULL | | 开始时间 |
+ | end_time | datetime | YES | | NULL | | 结束时间 |
+ | duration_seconds | bigint | YES | | NULL | | 持续时间(秒) |
+ | error_message | varchar(1024) | YES | | NULL | | 错误信息 |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+
+ ---
+
+ ## 15. upload_record (上传记录表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | bucket_name | varchar(255) | NO | MUL | | | 存储桶名 |
+ | object_key | varchar(1024) | NO | | | | 对象键 |
+ | upload_id | varchar(255) | YES | MUL | | | 上传ID |
+ | user_id | bigint | NO | MUL | | | 操作者ID |
+ | user_shard | tinyint | NO | MUL | | | 用户ID分片 |
+ | file_name | varchar(500) | YES | | NULL | | 文件名 |
+ | file_size | bigint | NO | | | | 文件大小(字节) |
+ | file_md5 | varchar(32) | YES | | NULL | | 文件MD5 |
+ | content_type | varchar(255) | YES | | NULL | | MIME类型 |
+ | upload_method | varchar(20) | NO | | | | 上传方式 |
+ | part_count | int | YES | | 0 | | 分片数量 |
+ | part_size | bigint | YES | | NULL | | 分片大小 |
+ | uploaded_parts | int | YES | | 0 | | 已上传分片数 |
+ | upload_status | varchar(20) | NO | MUL | | | 上传状态 |
+ | start_time | datetime | YES | | NULL | | 开始时间 |
+ | complete_time | datetime | YES | | NULL | | 完成时间 |
+ | upload_ip | varchar(50) | YES | | NULL | | 上传IP |
+ | client_type | varchar(20) | YES | | NULL | | 客户端类型 |
+ | device_id | varchar(100) | YES | | NULL | | 设备ID |
+ | user_agent | varchar(500) | YES | | NULL | | User-Agent |
+ | error_message | varchar(500) | YES | | NULL | | 错误信息 |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+
+ ---
+
+ ## 16. virus_scan_record (病毒扫描记录表)
+
+ | 字段名 | 类型 | 是否为空 | 键 | 默认值 | 额外 | 说明 |
+ |--------|------|----------|-----|--------|------|------|
+ | id | bigint | NO | PRI | | auto_increment | 主键ID |
+ | task_id | varchar(255) | NO | UNI | | | 任务ID |
+ | bucket_name | varchar(255) | NO | MUL | | | 存储桶名 |
+ | object_key | varchar(1024) | NO | | | | 对象键 |
+ | file_size | bigint | YES | | NULL | | 文件大小(字节) |
+ | file_version_id | varchar(255) | YES | | NULL | | 文件版本ID |
+ | status | varchar(32) | NO | MUL | | | 状态 |
+ | virus_found | tinyint | YES | MUL | 0 | | 是否发现病毒 |
+ | virus_type | varchar(64) | YES | | NULL | | 病毒类型 |
+ | virus_name | varchar(255) | YES | | NULL | | 病毒名称 |
+ | scan_time | bigint | YES | | NULL | | 扫描耗时(毫秒) |
+ | action_taken | varchar(32) | YES | | NULL | | 采取的操作 |
+ | error_message | varchar(1024) | YES | | NULL | | 错误信息 |
+ | created_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED | 创建时间 |
+ | updated_time | datetime | NO | | | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP | 更新时间 |
+
+ ---
+
+ ## 表汇总
+
+ **共 16 张表**
+
+ 1. bucket_billing_config - Bucket计费配置
+ 2. bucket_billing_record - Bucket计费记录
+ 3. bucket_config - Bucket配置
+ 4. bucket_statistics - Bucket统计
+ 5. bucket_storage_log - Bucket存储日志
+ 6. bucket_traffic_log - Bucket流量日志
+ 7. content_detection_record - 内容检测记录
+ 8. file_access_log - 文件访问日志
+ 9. file_statistics - 文件统计
+ 10. object_metadata - 对象元数据
+ 11. resume_upload_record - 断点续传记录
+ 12. security_config - 安全配置
+ 13. sensitive_data_detail - 敏感数据详情
+ 14. sensitive_data_scan_record - 敏感数据扫描记录
+ 15. upload_record - 上传记录
+ 16. virus_scan_record - 病毒扫描记录

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.user.provider.mapper.MiniProgramCertificationMapper">
+
+    <resultMap id="BaseResultMap" type="com.duda.user.provider.po.MiniProgramCertificationPO">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="mini_program_id" property="miniProgramId"/>
+        <result column="certification_status" property="certificationStatus"/>
+        <result column="certification_time" property="certificationTime"/>
+        <result column="certification_expire_time" property="certificationExpireTime"/>
+        <result column="deleted" property="deleted"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+</mapper>

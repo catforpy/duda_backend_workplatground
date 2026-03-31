@@ -48,6 +48,18 @@
             <artifactId>spring-beans</artifactId>
         </dependency>
 
+        <!-- Spring Context（用于 @Component 等注解） -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- Slf4j（用于日志） -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
         <!-- Swagger注解（用于 @Schema） -->
         <dependency>
             <groupId>io.swagger.core.v3</groupId>

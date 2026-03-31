@@ -48,6 +48,7 @@ public class AuthServiceImpl implements IAuthService {
     @DubboReference(
             version = "1.0.0",
             group = "MSG_GROUP",
+            registry = "msgRegistry",
             check = false
     )
     private ISmsRpc smsRpc;

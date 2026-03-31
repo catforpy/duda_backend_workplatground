@@ -114,40 +114,62 @@ public class SmsServiceImpl implements ISmsService {
      */
     @Override
     public MsgCheckDTO checkLoginCode(String phone, Integer code) {
-        logger.info("【checkLoginCode】开始校验验证码，phone={}, code={}", phone, code);
+        logger.info("【checkLoginCode】========== 开始校验验证码 ==========");
+        logger.info("【checkLoginCode】入参：phone={}, code={}", phone, code);
 
         try {
             // 1. 参数校验
+            logger.info("【checkLoginCode】步骤1：参数校验");
             if (StringUtils.isEmpty(phone) || code == null) {
-                logger.warn("【checkLoginCode】参数异常，phone={}, code={}", phone, code);
-                return new MsgCheckDTO(false, "参数异常");
+                logger.warn("【checkLoginCode】参数校验失败，phone={}, code={}", phone, code);
+                MsgCheckDTO result = new MsgCheckDTO(false, "参数异常");
+                logger.info("【checkLoginCode】返回：checkStatus={}, desc={}", result.isCheckStatus(), result.getDesc());
+                return result;
             }
+            logger.info("【checkLoginCode】参数校验通过");
 
             // 2. 从Redis获取验证码
+            logger.info("【checkLoginCode】步骤2：从Redis获取验证码");
             String codeCacheKey = SMS_CODE_PREFIX + phone;
+            logger.info("【checkLoginCode】Redis key：{}", codeCacheKey);
             Object redisCode = redisTemplate.opsForValue().get(codeCacheKey);
+            logger.info("【checkLoginCode】从Redis获取到：{}", redisCode);
 
             if (redisCode == null) {
-                logger.warn("【checkLoginCode】验证码已失效，phone={}", phone);
-                return new MsgCheckDTO(false, "验证码已失效");
+                logger.warn("【checkLoginCode】Redis中无验证码，可能已失效，phone={}", phone);
+                MsgCheckDTO result = new MsgCheckDTO(false, "验证码已失效");
+                logger.info("【checkLoginCode】返回：checkStatus={}, desc={}", result.isCheckStatus(), result.getDesc());
+                return result;
             }
 
             // 3. 验证码比对
+            logger.info("【checkLoginCode】步骤3：验证码比对");
             int storedCode = Integer.parseInt(redisCode.toString());
+            logger.info("【checkLoginCode】存储的验证码：{}，用户输入的验证码：{}", storedCode, code);
+
             if (storedCode == code) {
                 // 验证成功，删除Redis中的验证码
+                logger.info("【checkLoginCode】验证码匹配，准备删除Redis中的验证码");
                 redisTemplate.delete(codeCacheKey);
-                logger.info("【checkLoginCode】验证成功，phone={}", phone);
-                return new MsgCheckDTO(true, "验证码校验成功");
+                logger.info("【checkLoginCode】Redis验证码已删除");
+                MsgCheckDTO result = new MsgCheckDTO(true, "验证码校验成功");
+                logger.info("【checkLoginCode】验证成功，返回：checkStatus={}, desc={}", result.isCheckStatus(), result.getDesc());
+                logger.info("【checkLoginCode】========== 校验完成（成功） ==========");
+                return result;
             }
 
-            logger.warn("【checkLoginCode】验证码错误，phone={}, expected={}, actual={}",
-                phone, storedCode, code);
-            return new MsgCheckDTO(false, "验证码错误");
+            logger.warn("【checkLoginCode】验证码不匹配");
+            MsgCheckDTO result = new MsgCheckDTO(false, "验证码错误");
+            logger.info("【checkLoginCode】返回：checkStatus={}, desc={}", result.isCheckStatus(), result.getDesc());
+            logger.info("【checkLoginCode】========== 校验完成（失败） ==========");
+            return result;
 
         } catch (Exception e) {
             logger.error("【checkLoginCode】校验异常，phone={}, code={}", phone, code, e);
-            return new MsgCheckDTO(false, "校验异常");
+            MsgCheckDTO result = new MsgCheckDTO(false, "校验异常");
+            logger.info("【checkLoginCode】返回：checkStatus={}, desc={}", result.isCheckStatus(), result.getDesc());
+            logger.info("【checkLoginCode】========== 校验完成（异常） ==========");
+            return result;
         }
     }
 

@@ -6,6 +6,7 @@ import com.duda.user.mapper.UserProfileMapper;
 import com.duda.user.po.UserProfilePO;
 import com.duda.user.service.IUserProfileService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 用户扩展资料Service实现
@@ -25,6 +26,7 @@ public class UserProfileServiceImpl extends ServiceImpl<UserProfileMapper, UserP
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean saveOrUpdate(Long userId, UserProfilePO profile) {
         UserProfilePO existing = getByUserId(userId);
         if (existing != null) {

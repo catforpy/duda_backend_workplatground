@@ -1,0 +1,590 @@
+package com.duda.file.adapter.impl;
+
+import com.aliyun.oss.OSS;
+import com.aliyun.oss.OSSClientBuilder;
+import com.aliyun.oss.common.auth.CredentialsProvider;
+import com.aliyun.oss.common.auth.DefaultCredentialProvider;
+import com.aliyun.oss.model.*;
+import com.duda.file.adapter.StorageService;
+import com.duda.file.adapter.impl.converter.OSSConverter;
+import com.duda.file.common.exception.StorageException;
+import com.duda.file.dto.bucket.BucketDTO;
+import com.duda.file.dto.bucket.ApiKeyConfigDTO;
+import com.duda.file.dto.download.DownloadResultDTO;
+import com.duda.file.dto.object.ObjectDTO;
+import com.duda.file.dto.object.ObjectMetadataDTO;
+import com.duda.file.dto.upload.UploadResultDTO;
+import com.duda.file.enums.StorageType;
+
+import java.io.InputStream;
+import java.net.URL;
+import java.util.*;
+
+/**
+ * 阿里云OSS适配器实现
+ * 实现StorageService接口,提供阿里云OSS的统一访问
+ *
+ * @author duda
+ * @date 2025-03-13
+ */
+public class AliyunOSSAdapter implements StorageService {
+
+    private final OSS ossClient;
+    private final ApiKeyConfigDTO apiKeyConfig;
+
+    /**
+     * 构造函数
+     *
+     * @param apiKeyConfig API密钥配置
+     */
+    public AliyunOSSAdapter(ApiKeyConfigDTO apiKeyConfig) {
+        this.apiKeyConfig = apiKeyConfig;
+
+        // 创建凭证提供者
+        CredentialsProvider credentialsProvider;
+        if (apiKeyConfig.isTemporaryCredentials()) {
+            // 使用STS临时凭证
+            credentialsProvider = new DefaultCredentialProvider(
+                    apiKeyConfig.getAccessKeyId(),
+                    apiKeyConfig.getAccessKeySecret(),
+                    apiKeyConfig.getSecurityToken()
+            );
+        } else {
+            // 使用长期密钥
+            credentialsProvider = new DefaultCredentialProvider(
+                    apiKeyConfig.getAccessKeyId(),
+                    apiKeyConfig.getAccessKeySecret()
+            );
+        }
+
+        // 创建OSS客户端
+        String endpoint = apiKeyConfig.getFullEndpoint();
+        this.ossClient = new OSSClientBuilder().build(endpoint, credentialsProvider);
+    }
+
+    /**
+     * 获取OSS客户端实例(供内部使用)
+     */
+    public OSS getOssClient() {
+        return ossClient;
+    }
+
+    @Override
+    public StorageType getStorageType() {
+        return StorageType.ALIYUN_OSS;
+    }
+
+    // ==================== Bucket操作 ====================
+
+    @Override
+    public BucketDTO createBucket(String bucketName, String region, Map<String, Object> config) throws StorageException {
+        try {
+            CreateBucketRequest request = new CreateBucketRequest(bucketName);
+
+            // 设置存储类型
+            if (config != null && config.containsKey("storageClass")) {
+                String storageClassStr = (String) config.get("storageClass");
+                com.aliyun.oss.model.StorageClass storageClass =
+                        com.aliyun.oss.model.StorageClass.valueOf(storageClassStr);
+                request.setStorageClass(storageClass);
+            }
+
+            // 设置数据冗余类型
+            if (config != null && config.containsKey("dataRedundancyType")) {
+                String redundancyTypeStr = (String) config.get("dataRedundancyType");
+                DataRedundancyType redundancyType = DataRedundancyType.valueOf(redundancyTypeStr);
+                request.setDataRedundancyType(redundancyType);
+            }
+
+            // 创建Bucket
+            ossClient.createBucket(request);
+
+            // 返回Bucket信息
+            return getBucketInfo(bucketName);
+        } catch (Exception e) {
+            throw new StorageException("CREATE_BUCKET_FAILED", "Failed to create bucket: " + bucketName, e);
+        }
+    }
+
+    @Override
+    public void deleteBucket(String bucketName) throws StorageException {
+        try {
+            ossClient.deleteBucket(bucketName);
+        } catch (Exception e) {
+            throw new StorageException("DELETE_BUCKET_FAILED", "Failed to delete bucket: " + bucketName, e);
+        }
+    }
+
+    @Override
+    public boolean doesBucketExist(String bucketName) {
+        return ossClient.doesBucketExist(bucketName);
+    }
+
+    @Override
+    public BucketDTO getBucketInfo(String bucketName) {
+        try {
+            // 检查Bucket是否存在
+            if (!doesBucketExist(bucketName)) {
+                return null;
+            }
+
+            // 获取Bucket信息
+            Bucket bucket = ossClient.getBucketInfo(bucketName).getBucket();
+            BucketDTO dto = OSSConverter.toBucketDTO(bucket);
+
+            // 获取Bucket标签
+            try {
+                TagSet tagSet = ossClient.getBucketTags(bucketName);
+                Map<String, String> tags = new HashMap<>();
+                for (Tag tag : tagSet.getAllTags()) {
+                    tags.put(tag.getKey(), tag.getValue());
+                }
+                dto.setTags(tags);
+            } catch (Exception e) {
+                // 忽略获取标签失败
+                dto.setTags(new HashMap<>());
+            }
+
+            return dto;
+        } catch (Exception e) {
+            throw new StorageException("GET_BUCKET_INFO_FAILED", "Failed to get bucket info: " + bucketName, e);
+        }
+    }
+
+    @Override
+    public List<BucketDTO> listBuckets() {
+        try {
+            ListBucketsRequest request = new ListBucketsRequest();
+            List<Bucket> buckets = ossClient.listBuckets(request).getBucketList();
+
+            List<BucketDTO> result = new ArrayList<>();
+            for (Bucket bucket : buckets) {
+                result.add(OSSConverter.toBucketDTO(bucket));
+            }
+
+            return result;
+        } catch (Exception e) {
+            throw new StorageException("LIST_BUCKETS_FAILED", "Failed to list buckets", e);
+        }
+    }
+
+    @Override
+    public void setBucketAcl(String bucketName, String acl) {
+        try {
+            CannedAccessControlList aclType = CannedAccessControlList.valueOf(acl);
+            ossClient.setBucketAcl(bucketName, aclType);
+        } catch (Exception e) {
+            throw new StorageException("SET_BUCKET_ACL_FAILED", "Failed to set bucket ACL: " + bucketName, e);
+        }
+    }
+
+    @Override
+    public String getBucketAcl(String bucketName) {
+        try {
+            CannedAccessControlList acl = ossClient.getBucketAcl(bucketName);
+            return acl.name();
+        } catch (Exception e) {
+            throw new StorageException("GET_BUCKET_ACL_FAILED", "Failed to get bucket ACL: " + bucketName, e);
+        }
+    }
+
+    @Override
+    public String getBucketLocation(String bucketName) {
+        try {
+            return ossClient.getBucketLocation(bucketName);
+        } catch (Exception e) {
+            throw new StorageException("GET_BUCKET_LOCATION_FAILED", "Failed to get bucket location: " + bucketName, e);
+        }
+    }
+
+    // ==================== Object操作 ====================
+
+    @Override
+    public UploadResultDTO uploadObject(String bucketName, String objectKey, InputStream inputStream, ObjectMetadataDTO metadata) throws StorageException {
+        try {
+            // 创建元数据
+            ObjectMetadata ossMetadata = OSSConverter.createObjectMetadata(metadata);
+            if (metadata != null && metadata.getContentLength() != null) {
+                ossMetadata.setContentLength(metadata.getContentLength());
+            }
+
+            // 上传对象
+            PutObjectResult result = ossClient.putObject(bucketName, objectKey, inputStream, ossMetadata);
+
+            // 转换结果
+            return OSSConverter.toUploadResultDTO(bucketName, objectKey, result);
+        } catch (Exception e) {
+            throw new StorageException("UPLOAD_OBJECT_FAILED", "Failed to upload object: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    @Override
+    public DownloadResultDTO downloadObject(String bucketName, String objectKey) throws StorageException {
+        try {
+            // 获取对象
+            OSSObject ossObject = ossClient.getObject(bucketName, objectKey);
+
+            // 构建下载结果
+            return DownloadResultDTO.builder()
+                    .bucketName(bucketName)
+                    .objectKey(objectKey)
+                    .inputStream(ossObject.getObjectContent())
+                    .fileSize(ossObject.getObjectMetadata().getContentLength())
+                    .eTag(ossObject.getObjectMetadata().getETag())
+                    .contentType(ossObject.getObjectMetadata().getContentType())
+                    .lastModified(OSSConverter.toLocalDateTime(ossObject.getObjectMetadata().getLastModified()))
+                    .contentMD5(ossObject.getObjectMetadata().getContentMD5())
+                    .crc64(ossObject.getObjectMetadata().getServerCRC64())
+                    .downloadMethod("simple")
+                    .downloadTime(java.time.LocalDateTime.now())
+                    .success(true)
+                    .build();
+        } catch (Exception e) {
+            throw new StorageException("DOWNLOAD_OBJECT_FAILED", "Failed to download object: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    @Override
+    public void deleteObject(String bucketName, String objectKey) throws StorageException {
+        try {
+            ossClient.deleteObject(bucketName, objectKey);
+        } catch (Exception e) {
+            throw new StorageException("DELETE_OBJECT_FAILED", "Failed to delete object: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    @Override
+    public int deleteObjects(String bucketName, List<String> objectKeys) throws StorageException {
+        try {
+            // 批量删除
+            DeleteObjectsRequest request = new DeleteObjectsRequest(bucketName);
+            List<Key> keys = new ArrayList<>();
+            for (String objectKey : objectKeys) {
+                keys.add(new Key(objectKey));
+            }
+            request.setKeys(keys);
+
+            DeleteObjectsResult result = ossClient.deleteObjects(request);
+            return result.getDeletedObjects().size();
+        } catch (Exception e) {
+            throw new StorageException("DELETE_OBJECTS_FAILED", "Failed to delete objects", e);
+        }
+    }
+
+    @Override
+    public boolean doesObjectExist(String bucketName, String objectKey) {
+        return ossClient.doesObjectExist(bucketName, objectKey);
+    }
+
+    @Override
+    public ObjectDTO getObjectInfo(String bucketName, String objectKey) {
+        try {
+            OSSObject ossObject = ossClient.getObject(bucketName, objectKey, true); // 不获取实际内容
+            return OSSConverter.toObjectDTO(bucketName, ossObject);
+        } catch (Exception e) {
+            throw new StorageException("GET_OBJECT_INFO_FAILED", "Failed to get object info: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    @Override
+    public ObjectMetadataDTO getObjectMetadata(String bucketName, String objectKey) {
+        try {
+            ObjectMetadata metadata = ossClient.getObjectMetadata(bucketName, objectKey);
+            return OSSConverter.toObjectMetadataDTO(metadata);
+        } catch (Exception e) {
+            throw new StorageException("GET_OBJECT_METADATA_FAILED", "Failed to get object metadata: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    @Override
+    public void setObjectMetadata(String bucketName, String objectKey, ObjectMetadataDTO metadata) {
+        try {
+            // OSS不支持直接修改元数据,需要通过CopyObject实现
+            ObjectMetadata ossMetadata = OSSConverter.createObjectMetadata(metadata);
+            CopyObjectRequest request = new CopyObjectRequest(bucketName, objectKey, bucketName, objectKey);
+            request.setObjectMetadata(ossMetadata);
+            ossClient.copyObject(request);
+        } catch (Exception e) {
+            throw new StorageException("SET_OBJECT_METADATA_FAILED", "Failed to set object metadata: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    @Override
+    public void copyObject(String sourceBucketName, String sourceObjectKey, String destinationBucketName, String destinationObjectKey) throws StorageException {
+        try {
+            CopyObjectRequest request = new CopyObjectRequest(sourceBucketName, sourceObjectKey, destinationBucketName, destinationObjectKey);
+            ossClient.copyObject(request);
+        } catch (Exception e) {
+            throw new StorageException("COPY_OBJECT_FAILED", "Failed to copy object", e);
+        }
+    }
+
+    @Override
+    public List<ObjectDTO> listObjects(String bucketName, String prefix, Integer maxKeys, String marker, String delimiter) {
+        try {
+            ListObjectsRequest request = new ListObjectsRequest(bucketName);
+            if (prefix != null) {
+                request.setPrefix(prefix);
+            }
+            if (maxKeys != null) {
+                request.setMaxKeys(maxKeys);
+            }
+            if (marker != null) {
+                request.setMarker(marker);
+            }
+            if (delimiter != null) {
+                request.setDelimiter(delimiter);
+            }
+
+            ObjectListing listing = ossClient.listObjects(request);
+            List<ObjectDTO> result = new ArrayList<>();
+
+            // 添加对象
+            for (OSSObjectSummary summary : listing.getObjectSummaries()) {
+                result.add(OSSConverter.toObjectDTO(bucketName, summary));
+            }
+
+            // 添加公共前缀(模拟目录)
+            for (String commonPrefix : listing.getCommonPrefixes()) {
+                ObjectDTO dir = ObjectDTO.builder()
+                        .bucketName(bucketName)
+                        .objectKey(commonPrefix)
+                        .objectType("directory")
+                        .isDirectory(true)
+                        .size(0L)
+                        .build();
+                result.add(dir);
+            }
+
+            return result;
+        } catch (Exception e) {
+            throw new StorageException("LIST_OBJECTS_FAILED", "Failed to list objects: " + bucketName, e);
+        }
+    }
+
+    @Override
+    public void setObjectAcl(String bucketName, String objectKey, String acl) {
+        try {
+            CannedAccessControlList aclType = CannedAccessControlList.valueOf(acl);
+            ossClient.setObjectAcl(bucketName, objectKey, aclType);
+        } catch (Exception e) {
+            throw new StorageException("SET_OBJECT_ACL_FAILED", "Failed to set object ACL: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    @Override
+    public String getObjectAcl(String bucketName, String objectKey) {
+        try {
+            CannedAccessControlList acl = ossClient.getObjectAcl(bucketName, objectKey);
+            return acl.name();
+        } catch (Exception e) {
+            throw new StorageException("GET_OBJECT_ACL_FAILED", "Failed to get object ACL: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    // ==================== 签名URL操作 ====================
+
+    @Override
+    public String generatePresignedUrl(String bucketName, String objectKey, int expiration, String method) {
+        try {
+            Date expirationDate = new Date(System.currentTimeMillis() + expiration * 1000L);
+            HttpMethod httpMethod = HttpMethod.valueOf(method);
+            URL url = ossClient.generatePresignedUrl(bucketName, objectKey, expirationDate, httpMethod);
+            return url.toString();
+        } catch (Exception e) {
+            throw new StorageException("GENERATE_PRESIGNED_URL_FAILED", "Failed to generate presigned URL", e);
+        }
+    }
+
+    @Override
+    public Map<String, String> generateUploadFormData(String bucketName, String objectKey, int expiration) {
+        try {
+            // 这里简化处理,实际应该生成完整的表单
+            Map<String, String> formData = new HashMap<>();
+
+            // 生成签名
+            Date expirationDate = new Date(System.currentTimeMillis() + expiration * 1000L);
+            GeneratePostObjectPolicyRequest policyRequest = new GeneratePostObjectPolicyRequest(bucketName, objectKey, expirationDate);
+            Policy policy = ossClient.generatePostPolicy(policyRequest);
+            String encodedPolicy = policy.compress();
+            String signature = ossClient.calculatePostSignature(encodedPolicy);
+
+            formData.put("OSSAccessKeyId", apiKeyConfig.getAccessKeyId());
+            formData.put("policy", encodedPolicy);
+            formData.put("signature", signature);
+            formData.put("key", objectKey);
+
+            return formData;
+        } catch (Exception e) {
+            throw new StorageException("GENERATE_UPLOAD_FORM_DATA_FAILED", "Failed to generate upload form data", e);
+        }
+    }
+
+    // ==================== 分片上传操作 ====================
+
+    @Override
+    public String initiateMultipartUpload(String bucketName, String objectKey, ObjectMetadataDTO metadata) {
+        try {
+            InitiateMultipartUploadRequest request = new InitiateMultipartUploadRequest(bucketName, objectKey);
+            ObjectMetadata ossMetadata = OSSConverter.createObjectMetadata(metadata);
+            request.setObjectMetadata(ossMetadata);
+
+            InitiateMultipartUploadResult result = ossClient.initiateMultipartUpload(request);
+            return result.getUploadId();
+        } catch (Exception e) {
+            throw new StorageException("INITIATE_MULTIPART_UPLOAD_FAILED", "Failed to initiate multipart upload", e);
+        }
+    }
+
+    @Override
+    public String uploadPart(String bucketName, String objectKey, String uploadId, int partNumber, InputStream inputStream, long partSize) {
+        try {
+            UploadPartRequest request = new UploadPartRequest();
+            request.setBucketName(bucketName);
+            request.setKey(objectKey);
+            request.setUploadId(uploadId);
+            request.setPartNumber(partNumber);
+            request.setInputStream(inputStream);
+            request.setPartSize(partSize);
+
+            UploadPartResult result = ossClient.uploadPart(request);
+            return result.getETag();
+        } catch (Exception e) {
+            throw new StorageException("UPLOAD_PART_FAILED", "Failed to upload part: " + partNumber, e);
+        }
+    }
+
+    @Override
+    public UploadResultDTO completeMultipartUpload(String bucketName, String objectKey, String uploadId, Map<Integer, String> partETags) {
+        try {
+            CompleteMultipartUploadRequest request = new CompleteMultipartUploadRequest(bucketName, objectKey, uploadId);
+
+            // 设置分片ETag列表
+            List<PartETag> partETagList = new ArrayList<>();
+            for (Map.Entry<Integer, String> entry : partETags.entrySet()) {
+                partETagList.add(new PartETag(entry.getKey(), entry.getValue()));
+            }
+            request.setPartETags(partETagList);
+
+            // 完成分片上传
+            CompleteMultipartUploadResult result = ossClient.completeMultipartUpload(request);
+
+            return UploadResultDTO.builder()
+                    .bucketName(bucketName)
+                    .objectKey(objectKey)
+                    .eTag(result.getETag())
+                    .build();
+        } catch (Exception e) {
+            throw new StorageException("COMPLETE_MULTIPART_UPLOAD_FAILED", "Failed to complete multipart upload", e);
+        }
+    }
+
+    @Override
+    public void abortMultipartUpload(String bucketName, String objectKey, String uploadId) {
+        try {
+            AbortMultipartUploadRequest request = new AbortMultipartUploadRequest(bucketName, objectKey, uploadId);
+            ossClient.abortMultipartUpload(request);
+        } catch (Exception e) {
+            throw new StorageException("ABORT_MULTIPART_UPLOAD_FAILED", "Failed to abort multipart upload", e);
+        }
+    }
+
+    @Override
+    public List<Map<String, Object>> listParts(String bucketName, String objectKey, String uploadId) {
+        try {
+            ListPartsRequest request = new ListPartsRequest(bucketName, objectKey, uploadId);
+            PartListing listing = ossClient.listParts(request);
+
+            List<Map<String, Object>> parts = new ArrayList<>();
+            for (PartSummary part : listing.getParts()) {
+                Map<String, Object> partMap = new HashMap<>();
+                partMap.put("partNumber", part.getPartNumber());
+                partMap.put("eTag", part.getETag());
+                partMap.put("size", part.getSize());
+                parts.add(partMap);
+            }
+
+            return parts;
+        } catch (Exception e) {
+            throw new StorageException("LIST_PARTS_FAILED", "Failed to list parts", e);
+        }
+    }
+
+    @Override
+    public List<Map<String, Object>> listMultipartUploads(String bucketName, String prefix, Integer maxUploads) {
+        try {
+            ListMultipartUploadsRequest request = new ListMultipartUploadsRequest(bucketName);
+            if (prefix != null) {
+                request.setPrefix(prefix);
+            }
+            if (maxUploads != null) {
+                request.setMaxUploads(maxUploads);
+            }
+
+            MultipartUploadListing listing = ossClient.listMultipartUploads(request);
+            List<Map<String, Object>> uploads = new ArrayList<>();
+
+            for (MultipartUpload upload : listing.getMultipartUploads()) {
+                Map<String, Object> uploadMap = new HashMap<>();
+                uploadMap.put("uploadId", upload.getUploadId());
+                uploadMap.put("key", upload.getKey());
+                uploadMap.put("initiated", upload.getInitiated());
+                uploads.add(uploadMap);
+            }
+
+            return uploads;
+        } catch (Exception e) {
+            throw new StorageException("LIST_MULTIPART_UPLOADS_FAILED", "Failed to list multipart uploads", e);
+        }
+    }
+
+    // ==================== 追加上传 ====================
+
+    @Override
+    public Long appendObject(String bucketName, String objectKey, InputStream inputStream, Long position, ObjectMetadataDTO metadata) throws StorageException {
+        try {
+            AppendObjectRequest request = new AppendObjectRequest(bucketName, objectKey, inputStream, position);
+            ObjectMetadata ossMetadata = OSSConverter.createObjectMetadata(metadata);
+            request.setObjectMetadata(ossMetadata);
+
+            AppendObjectResult result = ossClient.appendObject(request);
+            return result.getNextPosition();
+        } catch (Exception e) {
+            throw new StorageException("APPEND_OBJECT_FAILED", "Failed to append object: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    // ==================== 其他操作 ====================
+
+    @Override
+    public void restoreObject(String bucketName, String objectKey, int days) {
+        try {
+            // 设置恢复天数
+            RestoreObjectRequest request = new RestoreObjectRequest(bucketName, objectKey);
+            request.setDays(days);
+            ossClient.restoreObject(request);
+        } catch (Exception e) {
+            throw new StorageException("RESTORE_OBJECT_FAILED", "Failed to restore object: " + bucketName + "/" + objectKey, e);
+        }
+    }
+
+    @Override
+    public void createSymlink(String bucketName, String symlinkKey, String targetKey) {
+        try {
+            CreateSymlinkRequest request = new CreateSymlinkRequest(bucketName, symlinkKey, targetKey);
+            ossClient.createSymlink(request);
+        } catch (Exception e) {
+            throw new StorageException("CREATE_SYMLINK_FAILED", "Failed to create symlink: " + bucketName + "/" + symlinkKey, e);
+        }
+    }
+
+    @Override
+    public String getSymlink(String bucketName, String symlinkKey) {
+        try {
+            Symlink symlink = ossClient.getSymlink(bucketName, symlinkKey);
+            return symlink.getTarget();
+        } catch (Exception e) {
+            throw new StorageException("GET_SYMLINK_FAILED", "Failed to get symlink: " + bucketName + "/" + symlinkKey, e);
+        }
+    }
+}

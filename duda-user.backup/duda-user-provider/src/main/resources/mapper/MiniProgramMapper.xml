@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.user.provider.mapper.MiniProgramMapper">
+
+    <!-- 结果映射 - 完整字段映射（36个字段） -->
+    <resultMap id="BaseResultMap" type="com.duda.user.provider.po.MiniProgramPO">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="appid" property="appid"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="company_id" property="companyId"/>
+        <result column="status" property="status"/>
+        <result column="wechat_token" property="wechatToken"/>
+        <result column="wechat_encoding_aes_key" property="wechatEncodingAesKey"/>
+        <result column="owner_user_id" property="ownerId"/>
+        <result column="developer_company_id" property="developerCompanyId"/>
+        <result column="business_mode" property="businessMode"/>
+        <result column="template_id" property="templateId"/>
+        <result column="first_category" property="firstCategory"/>
+        <result column="second_category" property="secondCategory"/>
+        <result column="qrcode_url" property="qrcodeUrl"/>
+        <result column="intro" property="intro"/>
+        <result column="wechat_certified" property="wechatCertified"/>
+        <result column="certification_status" property="certificationStatus"/>
+        <result column="certification_time" property="certificationTime"/>
+        <result column="filing_status" property="filingStatus"/>
+        <result column="filing_no" property="filingNo"/>
+        <result column="filing_time" property="filingTime"/>
+        <result column="wechat_pay_enabled" property="wechatPayEnabled"/>
+        <result column="wechat_pay_mch_id" property="wechatPayMchId"/>
+        <result column="server_domain" property="serverDomain"/>
+        <result column="socket_server_domain" property="socketServerDomain"/>
+        <result column="upload_domain" property="uploadDomain"/>
+        <result column="download_domain" property="downloadDomain"/>
+        <result column="business_domain" property="businessDomain"/>
+        <result column="online_status" property="onlineStatus"/>
+        <result column="authorize_time" property="authorizeTime"/>
+        <result column="last_publish_time" property="lastPublishTime"/>
+        <!-- JSON字段映射 - 使用JsonTypeHandler -->
+        <result column="tags" property="tags" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- 通用查询条件 ⭐ 自动注入租户过滤 -->
+    <sql id="queryCondition">
+        <where>
+            1=1
+            <if test="tenantId != null">
+                AND tenant_id = #{tenantId}
+            </if>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+            <if test="onlineStatus != null and onlineStatus != ''">
+                AND online_status = #{onlineStatus}
+            </if>
+            <if test="certificationStatus != null and certificationStatus != ''">
+                AND certification_status = #{certificationStatus}
+            </if>
+            <if test="filingStatus != null and filingStatus != ''">
+                AND filing_status = #{filingStatus}
+            </if>
+            <if test="businessMode != null and businessMode != ''">
+                AND business_mode = #{businessMode}
+            </if>
+            <if test="name != null and name != ''">
+                AND name LIKE CONCAT('%', #{name}, '%')
+            </if>
+            <if test="appid != null and appid != ''">
+                AND appid = #{appid}
+            </if>
+            <if test="companyId != null">
+                AND company_id = #{companyId}
+            </if>
+        </where>
+    </sql>
+
+    <!-- 分页查询小程序列表（带租户隔离）⭐ -->
+    <select id="selectPageWithTenant" resultMap="BaseResultMap">
+        SELECT * FROM mini_programs
+        <include refid="queryCondition"/>
+        ORDER BY id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+</mapper>

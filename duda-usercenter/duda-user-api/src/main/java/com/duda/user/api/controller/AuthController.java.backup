@@ -1,0 +1,627 @@
+package com.duda.user.api.controller;
+
+import cn.hutool.crypto.digest.BCrypt;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.duda.common.domain.Result;
+import com.duda.common.dto.auth.LoginRequestDTO;
+import com.duda.common.dto.auth.LoginResponseDTO;
+import com.duda.common.dto.auth.RegisterRequestDTO;
+import com.duda.common.dto.auth.RegisterResponseDTO;
+import com.duda.common.enums.LoginType;
+import com.duda.common.enums.ThirdPartyPlatform;
+import com.duda.common.enums.UserType;
+import com.duda.common.redis.idempotent.IdempotentHelper;
+import com.duda.common.security.service.TokenService;
+import com.duda.common.security.dto.TokenDTO;
+import com.duda.common.web.exception.BizException;
+import com.duda.id.api.IdGeneratorRpc;
+import com.duda.user.dto.UserDTO;
+import com.duda.user.po.UserPO;
+import com.duda.user.po.UserProfilePO;
+import com.duda.user.po.UserThirdPartyPO;
+import com.duda.user.mapper.UserMapper;
+import com.duda.user.service.IUserProfileService;
+import com.duda.user.service.IUserThirdPartyService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.annotation.Resource;
+import jakarta.validation.Valid;
+import org.apache.dubbo.config.annotation.DubboReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+/**
+ * 认证控制器
+ *
+ * 提供4种身份 × 3种登录方式的认证API
+ * 可通过Swagger UI直接测试
+ *
+ * @author DudaNexus
+ * @since 2026-03-11
+ */
+@Tag(name = "用户认证", description = "用户注册、登录、登出等认证接口（支持多身份多登录方式）")
+@RestController
+@RequestMapping("/api/auth")
+public class AuthController {
+
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+
+    @Resource
+    private TokenService tokenService;
+
+    @Resource
+    private IdempotentHelper idempotentHelper;
+
+    @Resource
+    private UserMapper userMapper;
+
+    @Resource
+    private IUserProfileService userProfileService;
+
+    @Resource
+    private IUserThirdPartyService userThirdPartyService;
+
+    @DubboReference(
+            group = "INFRA_GROUP",
+            version = "1.0.0",
+            registry = "infraRegistry"
+    )
+    private IdGeneratorRpc idGeneratorRpc;
+
+    /**
+     * 用户注册
+     *
+     * 支持4种身份 × 3种注册方式 = 12种组合
+     *
+     * 用户身份：
+     * - normal: 普通用户
+     * - merchant: 商家用户
+     * - operator: 运营人员
+     * - admin: 管理员
+     *
+     * 注册方式：
+     * - phone: 手机号 + 密码 + 验证码
+     * - email: 邮箱 + 密码 + 验证码
+     * - third_party: 第三方账号绑定
+     */
+    @Operation(
+        summary = "用户注册",
+        description = "支持手机号、邮箱、第三方3种注册方式，每种方式支持4种用户身份"
+    )
+    @PostMapping("/register")
+    public Result<RegisterResponseDTO> register(
+            @Parameter(description = "注册请求参数", required = true)
+            @Valid @RequestBody RegisterRequestDTO request) {
+
+        logger.info("用户注册，userType: {}, registerType: {}",
+                request.getUserType(), request.getRegisterType());
+
+        // 1. 验证请求参数
+        request.validate();
+
+        // 2. 防重复提交检查
+        String idempotentKey = buildIdempotentKey("register", request);
+        if (!idempotentHelper.checkAndSet(idempotentKey, 300)) {
+            throw new BizException("请勿重复提交注册请求");
+        }
+
+        // 3. 检查用户身份是否合法
+        UserType userType = UserType.fromCode(request.getUserType());
+
+        try {
+            // 4. 根据注册方式处理
+            RegisterResponseDTO response;
+
+            if ("phone".equals(request.getRegisterType())) {
+                // 手机号注册
+                response = registerByPhone(request, userType);
+            } else if ("email".equals(request.getRegisterType())) {
+                // 邮箱注册
+                response = registerByEmail(request, userType);
+            } else if ("third_party".equals(request.getRegisterType())) {
+                // 第三方注册
+                response = registerByThirdParty(request, userType);
+            } else {
+                throw new BizException("不支持的注册方式: " + request.getRegisterType());
+            }
+
+            logger.info("用户注册成功，userId: {}, userType: {}", response.getUserId(), response.getUserType());
+            return Result.success(response);
+
+        } catch (Exception e) {
+            // 注册失败，删除幂等key
+            idempotentHelper.delete(idempotentKey);
+            logger.error("用户注册失败，userType: {}, registerType: {}",
+                    request.getUserType(), request.getRegisterType(), e);
+            throw new BizException("注册失败: " + e.getMessage());
+        }
+    }
+
+    // ==================== 私有方法：注册相关 ====================
+
+    /**
+     * 手机号注册
+     */
+    private RegisterResponseDTO registerByPhone(RegisterRequestDTO request, UserType userType) {
+        logger.info("手机号注册，phone: {}, userType: {}", request.getPhone(), userType);
+
+        // 1. 验证手机验证码（TODO）
+        // if (!verifyCodeService.verifyPhoneCode(request.getPhone(), request.getPhoneVerifyCode())) {
+        //     throw new BizException("手机验证码错误或已过期");
+        // }
+
+        // 2. 检查手机号是否已注册
+        LambdaQueryWrapper<UserPO> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserPO::getPhone, request.getPhone());
+        Long count = userMapper.selectCount(wrapper);
+        if (count > 0) {
+            throw new BizException("该手机号已注册");
+        }
+
+        // 3. 检查用户名是否已存在（如果提供了用户名）
+        if (request.getUsername() != null && !request.getUsername().isBlank()) {
+            LambdaQueryWrapper<UserPO> wrapper2 = new LambdaQueryWrapper<>();
+            wrapper2.eq(UserPO::getUsername, request.getUsername());
+            Long count2 = userMapper.selectCount(wrapper2);
+            if (count2 > 0) {
+                throw new BizException("用户名已存在");
+            }
+        }
+
+        // 4. 创建用户
+        UserPO user = new UserPO();
+        user.setId(idGeneratorRpc.generateUserId());
+        user.setUserType(userType.getCode());
+        user.setUsername(request.getUsername() != null ? request.getUsername() : "user_" + request.getPhone().substring(7));
+        user.setPassword(BCrypt.hashpw(request.getPassword()));
+        user.setPhone(request.getPhone());
+        user.setRealName(request.getRealName());
+        user.setStatus("active");
+        user.setDeleted(0);
+
+        // 5. 保存到数据库
+        int result = userMapper.insert(user);
+        if (result <= 0) {
+            throw new BizException("注册失败");
+        }
+
+        // 6. 创建扩展资料
+        UserProfilePO profile = new UserProfilePO();
+        profile.setUserId(user.getId());
+        profile.setNickname(request.getUsername() != null ? request.getUsername() : "用户" + user.getId().toString().substring(0, 6));
+        userProfileService.save(profile);
+
+        // 7. 生成Token（自动登录）
+        TokenDTO tokenDTO = tokenService.generateTokens(
+                user.getId(),
+                user.getUsername(),
+                userType.getCode()
+        );
+
+        // 8. 组装响应
+        return RegisterResponseDTO.builder()
+                .userId(user.getId())
+                .username(user.getUsername())
+                .userType(userType.getCode())
+                .userTypeName(userType.getName())
+                .realName(request.getRealName())
+                .phone(maskPhone(request.getPhone()))
+                .avatar(user.getAvatar())
+                .status("active")
+                .statusDesc("激活成功")
+                .registerTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+                .needLogin(true)
+                .accessToken(tokenDTO.getAccessToken())
+                .refreshToken(tokenDTO.getRefreshToken())
+                .tokenType("Bearer")
+                .expiresIn(900L)
+                .welcomeMessage("欢迎加入都达云台！")
+                .build();
+    }
+
+    /**
+     * 邮箱注册
+     */
+    private RegisterResponseDTO registerByEmail(RegisterRequestDTO request, UserType userType) {
+        logger.info("邮箱注册，email: {}, userType: {}", request.getEmail(), userType);
+
+        // 1. 验证邮箱验证码（TODO）
+
+        // 2. 检查邮箱是否已注册
+        LambdaQueryWrapper<UserPO> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserPO::getEmail, request.getEmail());
+        Long count = userMapper.selectCount(wrapper);
+        if (count > 0) {
+            throw new BizException("该邮箱已注册");
+        }
+
+        // 3. 检查用户名是否已存在
+        if (request.getUsername() != null && !request.getUsername().isBlank()) {
+            LambdaQueryWrapper<UserPO> wrapper2 = new LambdaQueryWrapper<>();
+            wrapper2.eq(UserPO::getUsername, request.getUsername());
+            Long count2 = userMapper.selectCount(wrapper2);
+            if (count2 > 0) {
+                throw new BizException("用户名已存在");
+            }
+        }
+
+        // 4. 创建用户
+        UserPO user = new UserPO();
+        user.setId(idGeneratorRpc.generateUserId());
+        user.setUserType(userType.getCode());
+        user.setUsername(request.getUsername() != null ? request.getUsername() : "user_" + request.getEmail().split("@")[0]);
+        user.setPassword(BCrypt.hashpw(request.getPassword()));
+        user.setEmail(request.getEmail());
+        user.setRealName(request.getRealName());
+        user.setStatus("active");
+        user.setDeleted(0);
+
+        int result = userMapper.insert(user);
+        if (result <= 0) {
+            throw new BizException("注册失败");
+        }
+
+        // 5. 创建扩展资料
+        UserProfilePO profile = new UserProfilePO();
+        profile.setUserId(user.getId());
+        profile.setNickname(request.getUsername());
+        userProfileService.save(profile);
+
+        // 6. 生成Token
+        TokenDTO tokenDTO = tokenService.generateTokens(
+                user.getId(),
+                user.getUsername(),
+                userType.getCode()
+        );
+
+        return RegisterResponseDTO.builder()
+                .userId(user.getId())
+                .username(user.getUsername())
+                .userType(userType.getCode())
+                .userTypeName(userType.getName())
+                .realName(request.getRealName())
+                .email(maskEmail(request.getEmail()))
+                .avatar(user.getAvatar())
+                .status("active")
+                .statusDesc("激活成功")
+                .registerTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+                .needLogin(true)
+                .accessToken(tokenDTO.getAccessToken())
+                .refreshToken(tokenDTO.getRefreshToken())
+                .tokenType("Bearer")
+                .expiresIn(900L)
+                .welcomeMessage("欢迎加入都达云台！")
+                .build();
+    }
+
+    /**
+     * 第三方注册
+     */
+    private RegisterResponseDTO registerByThirdParty(RegisterRequestDTO request, UserType userType) {
+        logger.info("第三方注册，platform: {}, openId: {}, userType: {}",
+                request.getThirdPartyPlatform(), request.getThirdPartyOpenId(), userType);
+
+        // 1. 检查是否已绑定
+        ThirdPartyPlatform platform = ThirdPartyPlatform.fromCode(request.getThirdPartyPlatform());
+        UserThirdPartyPO thirdParty = userThirdPartyService.getByPlatformAndOpenId(
+                platform.getCode(), request.getThirdPartyOpenId());
+
+        if (thirdParty != null && thirdParty.getStatus() == 1) {
+            throw new BizException("该第三方账号已绑定其他用户");
+        }
+
+        // 2. 创建用户
+        UserPO user = new UserPO();
+        user.setId(idGeneratorRpc.generateUserId());
+        user.setUserType(userType.getCode());
+        user.setUsername(request.getUsername() != null ? request.getUsername() :
+                (platform.getName() + "用户" + System.currentTimeMillis() % 10000));
+        user.setRealName(request.getThirdPartyNickname());
+        user.setAvatar(request.getThirdPartyAvatar());
+        user.setStatus("active");
+        user.setDeleted(0);
+
+        int result = userMapper.insert(user);
+        if (result <= 0) {
+            throw new BizException("注册失败");
+        }
+
+        // 3. 绑定第三方账号
+        userThirdPartyService.bindThirdParty(
+                user.getId(),
+                platform.getCode(),
+                request.getThirdPartyOpenId(),
+                request.getThirdPartyUnionId()
+        );
+
+        // 4. 更新第三方昵称和头像
+        if (request.getThirdPartyNickname() != null) {
+            user.setRealName(request.getThirdPartyNickname());
+        }
+        if (request.getThirdPartyAvatar() != null) {
+            user.setAvatar(request.getThirdPartyAvatar());
+        }
+        userMapper.updateById(user);
+
+        // 5. 生成Token
+        TokenDTO tokenDTO = tokenService.generateTokens(
+                user.getId(),
+                user.getUsername(),
+                userType.getCode()
+        );
+
+        return RegisterResponseDTO.builder()
+                .userId(user.getId())
+                .username(user.getUsername())
+                .userType(userType.getCode())
+                .userTypeName(userType.getName())
+                .realName(request.getThirdPartyNickname())
+                .avatar(request.getThirdPartyAvatar())
+                .status("active")
+                .statusDesc("激活成功")
+                .registerTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+                .needLogin(true)
+                .accessToken(tokenDTO.getAccessToken())
+                .refreshToken(tokenDTO.getRefreshToken())
+                .tokenType("Bearer")
+                .expiresIn(900L)
+                .welcomeMessage("欢迎加入都达云台！")
+                .build();
+    }
+
+    /**
+     * 用户登录
+     *
+     * 支持4种身份 × 3种登录方式 = 12种组合
+     *
+     * 登录方式：
+     * - phone_password: 手机号 + 密码
+     * - email_password: 邮箱 + 密码
+     * - third_party: 第三方登录（微信/QQ/支付宝等）
+     */
+    @Operation(
+        summary = "用户登录",
+        description = "支持手机号密码、邮箱密码、第三方3种登录方式，每种方式支持4种用户身份"
+    )
+    @PostMapping("/login")
+    public Result<LoginResponseDTO> login(
+            @Parameter(description = "登录请求参数", required = true)
+            @Valid @RequestBody LoginRequestDTO request) {
+
+        LoginResponseDTO response = authService.login(request);
+        return Result.success(response);
+    }
+
+    /**
+     * 用户登出
+     */
+    @Operation(summary = "用户登出", description = "退出登录，失效Token")
+    @PostMapping("/logout")
+    public Result<Void> logout(
+            @Parameter(description = "访问令牌（格式：Bearer {token}）", required = true)
+            @RequestHeader("Authorization") String authorization,
+            @Parameter(description = "用户ID", required = true)
+            @RequestParam Long userId) {
+
+        // 移除 "Bearer " 前缀
+        String accessToken = authorization.replace("Bearer ", "");
+        authService.logout(accessToken, userId);
+        return Result.success();
+    }
+
+    /**
+     * 刷新Token
+     * 使用RefreshToken获取新的AccessToken
+     */
+    @Operation(summary = "刷新Token", description = "使用RefreshToken获取新的AccessToken")
+    @PostMapping("/refresh")
+    public Result<LoginResponseDTO> refresh(
+            @Parameter(description = "刷新令牌", required = true)
+            @RequestParam String refreshToken) {
+
+        LoginResponseDTO response = authService.refreshToken(refreshToken);
+        return Result.success(response);
+    }
+
+    /**
+     * 验证Token
+     * 检查AccessToken是否有效
+     */
+    @Operation(summary = "验证Token", description = "验证AccessToken是否有效")
+    @GetMapping("/validate")
+    public Result<Boolean> validate(
+            @Parameter(description = "访问令牌（格式：Bearer {token}）", required = true)
+            @RequestHeader("Authorization") String authorization) {
+
+        String accessToken = authorization.replace("Bearer ", "");
+        boolean valid = authService.validateToken(accessToken);
+        return Result.success(valid);
+    }
+
+    /**
+     * 获取当前用户信息
+     * 从Token中解析用户信息
+     */
+    @Operation(summary = "获取当前用户信息", description = "从Token中解析用户信息")
+    @GetMapping("/user/info")
+    public Result<LoginResponseDTO> getUserInfo(
+            @Parameter(description = "访问令牌（格式：Bearer {token}）", required = true)
+            @RequestHeader("Authorization") String authorization) {
+
+        String accessToken = authorization.replace("Bearer ", "");
+        Long userId = authService.getUserIdFromToken(accessToken);
+        String username = authService.getUsernameFromToken(accessToken);
+        String userType = authService.getUserTypeFromToken(accessToken);
+
+        // TODO: 从数据库查询完整用户信息
+        LoginResponseDTO response = LoginResponseDTO.builder()
+                .userId(userId)
+                .username(username)
+                .userType(userType)
+                .userTypeName(UserType.fromCode(userType).getName())
+                .build();
+
+        return Result.success(response);
+    }
+
+    // ==================== 快捷测试接口（用于Swagger测试）====================
+
+    /**
+     * 快速测试：手机号注册（普通用户）
+     *
+     * 测试数据：
+     * - 手机号: 13800138000
+     * - 密码: pass123456
+     * - 验证码: 123456（暂时不验证）
+     */
+    @Operation(summary = "【测试】手机号注册-普通用户", description = "快捷测试接口，预填数据")
+    @PostMapping("/test/register/phone/normal")
+    public Result<RegisterResponseDTO> testRegisterPhoneNormal() {
+        RegisterRequestDTO request = new RegisterRequestDTO();
+        request.setUserType(UserType.NORMAL.getCode());
+        request.setRegisterType("phone");
+        request.setUsername("testuser_normal");
+        request.setPassword("pass123456");
+        request.setConfirmPassword("pass123456");
+        request.setPhone("13800138000");
+        request.setPhoneVerifyCode("123456");
+        request.setClientIp("127.0.0.1");
+
+        RegisterResponseDTO response = authService.register(request);
+        return Result.success(response);
+    }
+
+    /**
+     * 快速测试：手机号注册（商家）
+     */
+    @Operation(summary = "【测试】手机号注册-商家", description = "快捷测试接口，预填数据")
+    @PostMapping("/test/register/phone/merchant")
+    public Result<RegisterResponseDTO> testRegisterPhoneMerchant() {
+        RegisterRequestDTO request = new RegisterRequestDTO();
+        request.setUserType(UserType.MERCHANT.getCode());
+        request.setRegisterType("phone");
+        request.setUsername("testuser_merchant");
+        request.setPassword("pass123456");
+        request.setConfirmPassword("pass123456");
+        request.setPhone("13800138001");
+        request.setPhoneVerifyCode("123456");
+        request.setRealName("测试商家");
+        request.setClientIp("127.0.0.1");
+
+        RegisterResponseDTO response = authService.register(request);
+        return Result.success(response);
+    }
+
+    /**
+     * 快速测试：邮箱注册（普通用户）
+     */
+    @Operation(summary = "【测试】邮箱注册-普通用户", description = "快捷测试接口，预填数据")
+    @PostMapping("/test/register/email/normal")
+    public Result<RegisterResponseDTO> testRegisterEmailNormal() {
+        RegisterRequestDTO request = new RegisterRequestDTO();
+        request.setUserType(UserType.NORMAL.getCode());
+        request.setRegisterType("email");
+        request.setUsername("testuser_email");
+        request.setPassword("pass123456");
+        request.setConfirmPassword("pass123456");
+        request.setEmail("testuser@example.com");
+        request.setEmailVerifyCode("123456");
+        request.setClientIp("127.0.0.1");
+
+        RegisterResponseDTO response = authService.register(request);
+        return Result.success(response);
+    }
+
+    /**
+     * 快速测试：第三方注册（微信）
+     */
+    @Operation(summary = "【测试】第三方注册-微信", description = "快捷测试接口，预填数据")
+    @PostMapping("/test/register/third/wechat")
+    public Result<RegisterResponseDTO> testRegisterThirdWechat() {
+        RegisterRequestDTO request = new RegisterRequestDTO();
+        request.setUserType(UserType.NORMAL.getCode());
+        request.setRegisterType("third_party");
+        request.setThirdPartyPlatform("wechat");
+        request.setThirdPartyOpenId("oTEST_OPEN_ID_" + System.currentTimeMillis());
+        request.setThirdPartyNickname("微信测试用户");
+        request.setThirdPartyAvatar("https://thirdparty.com/avatar.jpg");
+        request.setClientIp("127.0.0.1");
+
+        RegisterResponseDTO response = authService.register(request);
+        return Result.success(response);
+    }
+
+    /**
+     * 快速测试：手机号登录（普通用户）
+     */
+    @Operation(summary = "【测试】手机号登录-普通用户", description = "快捷测试接口，预填数据")
+    @PostMapping("/test/login/phone/normal")
+    public Result<LoginResponseDTO> testLoginPhoneNormal() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setLoginType("phone_password");
+        request.setUserType(UserType.NORMAL.getCode());
+        request.setPhone("13800138000");
+        request.setPassword("pass123456");
+        request.setClientIp("127.0.0.1");
+
+        LoginResponseDTO response = authService.login(request);
+        return Result.success(response);
+    }
+
+    /**
+     * 快速测试：手机号登录（商家）
+     */
+    @Operation(summary = "【测试】手机号登录-商家", description = "快捷测试接口，预填数据")
+    @PostMapping("/test/login/phone/merchant")
+    public Result<LoginResponseDTO> testLoginPhoneMerchant() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setLoginType("phone_password");
+        request.setUserType(UserType.MERCHANT.getCode());
+        request.setPhone("13800138001");
+        request.setPassword("pass123456");
+        request.setClientIp("127.0.0.1");
+
+        LoginResponseDTO response = authService.login(request);
+        return Result.success(response);
+    }
+
+    /**
+     * 快速测试：邮箱登录（普通用户）
+     */
+    @Operation(summary = "【测试】邮箱登录-普通用户", description = "快捷测试接口，预填数据")
+    @PostMapping("/test/login/email/normal")
+    public Result<LoginResponseDTO> testLoginEmailNormal() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setLoginType("email_password");
+        request.setUserType(UserType.NORMAL.getCode());
+        request.setEmail("testuser@example.com");
+        request.setPassword("pass123456");
+        request.setClientIp("127.0.0.1");
+
+        LoginResponseDTO response = authService.login(request);
+        return Result.success(response);
+    }
+
+    /**
+     * 快速测试：第三方登录（微信）
+     */
+    @Operation(summary = "【测试】第三方登录-微信", description = "快捷测试接口，预填数据")
+    @PostMapping("/test/login/third/wechat")
+    public Result<LoginResponseDTO> testLoginThirdWechat() {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setLoginType("third_party");
+        request.setUserType(UserType.NORMAL.getCode());
+        request.setThirdPartyPlatform("wechat");
+        request.setThirdPartyAuthCode("test_auth_code_" + System.currentTimeMillis());
+        request.setThirdPartyOpenId("oTEST_OPEN_ID_" + System.currentTimeMillis());
+        request.setClientIp("127.0.0.1");
+
+        LoginResponseDTO response = authService.login(request);
+        return Result.success(response);
+    }
+}

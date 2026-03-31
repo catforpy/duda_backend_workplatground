@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: duda-tenant-api
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 120.26.170.213:8848
+        namespace: duda-dev
+        group: DUDA_TENANT_GROUP
+        username: nacos
+        password: nacos
+      config:
+        server-addr: 120.26.170.213:8848
+        namespace: duda-dev
+        group: DUDA_TENANT_GROUP
+        username: nacos
+        password: nacos
+        file-extension: yml
+        refresh-enabled: true
+
+server:
+  port: 8089
+
+dubbo:
+  application:
+    name: ${spring.application.name}
+    version: 1.0.0
+    qos-enable: false
+  consumer:
+    timeout: 5000
+    retries: 2
+    check: false
+  registry:
+    address: nacos://120.26.170.213:8848
+    parameters:
+      namespace: duda-dev
+    group: DUDA_TENANT_GROUP
+    username: nacos
+    password: nacos
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.duda.tenant: INFO
+    com.alibaba.nacos: INFO

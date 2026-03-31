@@ -30,39 +30,39 @@ public class UserApiKeyRpcImpl implements IUserApiKeyRpc {
     }
 
     @Override
-    public List<UserApiKeyDTO> listUserApiKeys(Long userId, Boolean includeInactive) {
-        log.info("【RPC】查询用户API密钥列表: userId={}", userId);
-        return userApiKeyService.listUserApiKeys(userId, includeInactive);
+    public List<UserApiKeyDTO> listUserApiKeys(Long tenantId, Long userId, Boolean includeInactive) {
+        log.info("【RPC】查询用户API密钥列表: tenantId={}, userId={}", tenantId, userId);
+        return userApiKeyService.listUserApiKeys(tenantId, userId, includeInactive);
     }
 
     @Override
-    public UserApiKeyDTO getDefaultUserApiKey(Long userId) {
-        log.info("【RPC】查询用户默认API密钥: userId={}", userId);
-        return userApiKeyService.getDefaultUserApiKey(userId);
+    public UserApiKeyDTO getDefaultUserApiKey(Long tenantId, Long userId) {
+        log.info("【RPC】查询用户默认API密钥: tenantId={}, userId={}", tenantId, userId);
+        return userApiKeyService.getDefaultUserApiKey(tenantId, userId);
     }
 
     @Override
-    public UserApiKeyDTO getUserApiKeyById(Long keyId) {
-        log.info("【RPC】查询API密钥详情（内部调用）: keyId={}", keyId);
-        return userApiKeyService.getUserApiKeyById(keyId);
+    public UserApiKeyDTO getUserApiKeyById(Long tenantId, Long keyId) {
+        log.info("【RPC】查询API密钥详情（内部调用）: tenantId={}, keyId={}", tenantId, keyId);
+        return userApiKeyService.getUserApiKeyById(tenantId, keyId);
     }
 
     @Override
-    public Boolean deleteUserApiKey(Long keyId, Long userId) {
-        log.info("【RPC】删除用户API密钥: keyId={}, userId={}", keyId, userId);
-        return userApiKeyService.deleteUserApiKey(keyId, userId);
+    public Boolean deleteUserApiKey(Long tenantId, Long keyId, Long userId) {
+        log.info("【RPC】删除用户API密钥: tenantId={}, keyId={}, userId={}", tenantId, keyId, userId);
+        return userApiKeyService.deleteUserApiKey(tenantId, keyId, userId);
     }
 
     @Override
-    public Boolean setDefaultApiKey(Long keyId, Long userId) {
-        log.info("【RPC】设置默认API密钥: keyId={}, userId={}", keyId, userId);
-        return userApiKeyService.setDefaultApiKey(keyId, userId);
+    public Boolean setDefaultApiKey(Long tenantId, Long keyId, Long userId) {
+        log.info("【RPC】设置默认API密钥: tenantId={}, keyId={}, userId={}", tenantId, keyId, userId);
+        return userApiKeyService.setDefaultApiKey(tenantId, keyId, userId);
     }
 
     @Override
-    public Boolean updateApiKeyStatus(Long keyId, Long userId, Boolean active) {
-        log.info("【RPC】更新API密钥状态: keyId={}, userId={}, active={}", keyId, userId, active);
-        return userApiKeyService.updateApiKeyStatus(keyId, userId, active);
+    public Boolean updateApiKeyStatus(Long tenantId, Long keyId, Long userId, Boolean active) {
+        log.info("【RPC】更新API密钥状态: tenantId={}, keyId={}, userId={}, active={}", tenantId, keyId, userId, active);
+        return userApiKeyService.updateApiKeyStatus(tenantId, keyId, userId, active);
     }
 
     @Override

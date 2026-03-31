@@ -20,6 +20,11 @@ public class UserDTO implements Serializable {
     private Long id;
 
     /**
+     * 租户ID
+     */
+    private Long tenantId;
+
+    /**
      * 用户类型
      */
     private String userType;

@@ -1,0 +1,911 @@
+package com.duda.file.api.controller;
+
+import com.duda.common.domain.Result;
+import com.duda.file.dto.download.DownloadResultDTO;
+import com.duda.file.dto.object.*;
+import com.duda.file.dto.upload.GetSTSReqDTO;
+import com.duda.file.dto.upload.OssPostSignatureDTO;
+import com.duda.file.dto.upload.STSCredentialsDTO;
+import com.duda.file.dto.upload.UploadResultDTO;
+import com.duda.file.service.DownloadService;
+import com.duda.file.service.ObjectService;
+import com.duda.file.service.UploadService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Object 管理控制器
+ * 提供对象(Object)的完整管理功能
+ *
+ * 功能模块：
+ * 1. 文件上传 - 普通上传、STS上传、POST签名上传、分片上传
+ * 2. 文件下载 - 直接下载、签名URL下载
+ * 3. 文件管理 - 删除、复制、移动、元数据管理
+ * 4. 目录管理 - 创建、删除、列出目录内容
+ * 5. 标签检索 - 按标签搜索对象
+ *
+ * @author DudaNexus
+ * @since 2026-03-17
+ */
+@Tag(name = "Object管理", description = "对象(Object)管理接口")
+@RestController
+@RequestMapping("/api/object")
+@CrossOrigin(originPatterns = "*", maxAge = 3600)
+public class ObjectController {
+
+    @DubboReference(
+        version = "1.0.0",
+        group = "DUDA_FILE_GROUP",
+        check = false
+    )
+    private UploadService uploadService;
+
+    @DubboReference(
+        version = "1.0.0",
+        group = "DUDA_FILE_GROUP",
+        check = false
+    )
+    private DownloadService downloadService;
+
+    @DubboReference(
+        version = "1.0.0",
+        group = "DUDA_FILE_GROUP",
+        check = false
+    )
+    private ObjectService objectService;
+
+    // ==================== 文件上传 API ====================
+
+    /**
+     * 普通文件上传
+     *
+     * 通过后端服务器上传文件到 OSS。
+     * 适用于小文件上传（< 100MB）。
+     *
+     * 功能说明：
+     * - 支持多文件上传
+     * - 自动计算文件 MD5
+     * - 支持自定义元数据
+     * - 自动记录上传统计
+     *
+     * @param bucketName Bucket 名称
+     * @param userId 用户 ID
+     * @param files 上传的文件列表
+     * @param objectKey 对象键（可选，不填则自动生成）
+     * @param prefix 对象键前缀（可选，用于分类存储）
+     * @return 上传结果列表
+     */
+    @Operation(summary = "普通文件上传", description = "通过后端服务器上传文件到 OSS")
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result uploadFiles(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "用户ID", required = true)
+        @RequestParam Long userId,
+        @Parameter(description = "上传的文件", required = true)
+        @RequestPart MultipartFile[] files,
+        @Parameter(description = "对象键（可选）")
+        @RequestParam(required = false) String objectKey,
+        @Parameter(description = "对象键前缀（可选）")
+        @RequestParam(required = false) String prefix) {
+
+        List<UploadResultDTO> results = new java.util.ArrayList<>();
+
+        for (MultipartFile file : files) {
+            try {
+                UploadResultDTO result = uploadService.uploadFile(
+                    bucketName,
+                    objectKey != null ? objectKey : file.getOriginalFilename(),
+                    file.getInputStream(),
+                    file.getContentType(),
+                    file.getSize(),
+                    userId
+                );
+                results.add(result);
+            } catch (IOException e) {
+                return Result.error("文件上传失败: " + e.getMessage());
+            }
+        }
+
+        return Result.success(results);
+    }
+
+    /**
+     * 获取 STS 临时凭证
+     *
+     * 为前端直传 OSS 提供 STS 临时凭证。
+     * 适用于大文件上传或需要高并发上传的场景。
+     *
+     * 功能说明：
+     * - 生成有时效性的临时访问凭证
+     * - 权限限制在指定的 Bucket 和前缀
+     * - 凭证有效期可配置（默认 1 小时）
+     *
+     * @param request STS 请求参数
+     * @return STS 临时凭证
+     */
+    @Operation(summary = "获取STS临时凭证", description = "为前端直传 OSS 生成临时凭证")
+    @PostMapping("/sts-token")
+    public Result getSTSToken(
+        @Parameter(description = "STS请求参数", required = true)
+        @Valid @RequestBody GetSTSReqDTO request) {
+
+        // 验证请求参数
+        if (!request.validate()) {
+            return Result.errorParam("STS请求参数不合法");
+        }
+
+        // 生成 STS 凭证
+        STSCredentialsDTO credentials = uploadService.getSTSForClientUpload(request);
+
+        return Result.success(credentials);
+    }
+
+    /**
+     * 获取 POST 签名
+     *
+     * 为前端表单直传 OSS 生成 POST 签名。
+     * 适用于 Web 表单上传。
+     *
+     * @param bucketName Bucket 名称（可选）
+     * @return POST 表单签名和相关配置
+     */
+    @Operation(summary = "获取POST签名", description = "为前端表单直传生成 POST 签名")
+    @GetMapping("/post-signature")
+    public Result getPostSignature(
+        @Parameter(description = "Bucket名称（可选，不传则使用默认配置）")
+        @RequestParam(required = false) String bucketName) {
+
+        // 获取 POST 签名
+        OssPostSignatureDTO signature = uploadService.getOssPostSignature(bucketName);
+
+        return Result.success(signature);
+    }
+
+    /**
+     * 初始化分片上传
+     *
+     * 开始一个分片上传任务。
+     * 适用于大文件上传（> 100MB）。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param userId 用户 ID
+     * @param totalFileSize 总文件大小
+     * @param partCount 分片数量
+     * @param contentType 文件类型
+     * @return 分片上传信息（包含 uploadId）
+     */
+    @Operation(summary = "初始化分片上传", description = "开始一个大文件的分片上传任务")
+    @PostMapping("/multipart/init")
+    public Result initMultipartUpload(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "用户ID", required = true)
+        @RequestParam Long userId,
+        @Parameter(description = "总文件大小(字节)", required = true)
+        @RequestParam Long totalFileSize,
+        @Parameter(description = "分片数量", required = true)
+        @RequestParam Integer partCount,
+        @Parameter(description = "文件类型")
+        @RequestParam(required = false) String contentType) {
+
+        // 初始化分片上传
+        Map<String, Object> result = uploadService.initMultipartUpload(
+            bucketName,
+            objectKey,
+            totalFileSize,
+            partCount,
+            contentType,
+            userId
+        );
+
+        return Result.success(result);
+    }
+
+    /**
+     * 上传分片
+     *
+     * 上传单个分片。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param uploadId 分片上传 ID
+     * @param partNumber 分片号（从 1 开始）
+     * @param partData 分片数据
+     * @return 分片上传结果（包含 ETag）
+     */
+    @Operation(summary = "上传分片", description = "上传单个分片")
+    @PostMapping("/multipart/upload")
+    public Result uploadPart(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "分片上传ID", required = true)
+        @RequestParam String uploadId,
+        @Parameter(description = "分片号", required = true)
+        @RequestParam Integer partNumber,
+        @Parameter(description = "分片数据", required = true)
+        @RequestPart MultipartFile partData) {
+
+        try {
+            Map<String, Object> result = uploadService.uploadPart(
+                bucketName,
+                objectKey,
+                uploadId,
+                partNumber,
+                partData.getInputStream(),
+                partData.getSize()
+            );
+
+            return Result.success(result);
+        } catch (IOException e) {
+            return Result.error("分片上传失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 完成分片上传
+     *
+     * 完成分片上传，合并所有分片。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param uploadId 分片上传 ID
+     * @param partETags 分片 ETag 列表
+     * @param userId 用户 ID
+     * @return 完整的上传结果
+     */
+    @Operation(summary = "完成分片上传", description = "合并所有分片，完成上传")
+    @PostMapping("/multipart/complete")
+    public Result completeMultipartUpload(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "分片上传ID", required = true)
+        @RequestParam String uploadId,
+        @Parameter(description = "分片ETag列表", required = true)
+        @RequestBody List<Map<String, Object>> partETags,
+        @Parameter(description = "用户ID", required = true)
+        @RequestParam Long userId) {
+
+        UploadResultDTO result = uploadService.completeMultipartUpload(
+            bucketName,
+            objectKey,
+            uploadId,
+            partETags,
+            userId
+        );
+
+        return Result.success(result);
+    }
+
+    /**
+     * 取消分片上传
+     *
+     * 取消分片上传任务，清理已上传的分片。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param uploadId 分片上传 ID
+     * @return 取消结果
+     */
+    @Operation(summary = "取消分片上传", description = "取消分片上传任务并清理已上传的分片")
+    @PostMapping("/multipart/abort")
+    public Result abortMultipartUpload(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "分片上传ID", required = true)
+        @RequestParam String uploadId) {
+
+        uploadService.abortMultipartUpload(bucketName, objectKey, uploadId);
+
+        return Result.success(null, "分片上传已取消");
+    }
+
+    // ==================== 文件下载 API ====================
+
+    /**
+     * 下载文件
+     *
+     * 通过后端服务器下载文件。
+     * 支持断点续传和 Range 请求。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param response HTTP 响应
+     */
+    @Operation(summary = "下载文件", description = "通过后端服务器下载文件")
+    @GetMapping("/download")
+    public void downloadFile(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        HttpServletResponse response) {
+
+        try {
+            // 获取下载结果
+            DownloadResultDTO downloadResult = downloadService.downloadObject(bucketName, objectKey);
+
+            // 设置响应头
+            response.setContentType(downloadResult.getContentType());
+            response.setContentLengthLong(downloadResult.getContentLength());
+
+            // 设置文件名（支持中文文件名）
+            String fileName = objectKey.substring(objectKey.lastIndexOf('/') + 1);
+            String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8)
+                .replaceAll("\\+", "%20");
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"" + encodedFileName + "\"; filename*=UTF-8''" + encodedFileName);
+
+            // 支持断点续传
+            // TODO: 实现 Range 请求处理
+
+            // 写入文件流
+            try (OutputStream outputStream = response.getOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = downloadResult.getInputStream().read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                }
+                outputStream.flush();
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException("文件下载失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 获取签名下载 URL
+     *
+     * 生成带签名的临时下载 URL。
+     * 前端可以直接使用此 URL 下载文件，无需经过后端。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param expiration 过期时间（秒）
+     * @return 签名 URL
+     */
+    @Operation(summary = "获取签名下载URL", description = "生成带签名的临时下载 URL")
+    @GetMapping("/url")
+    public Result getSignedUrl(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "过期时间(秒)", required = true)
+        @RequestParam Integer expiration) {
+
+        String signedUrl = downloadService.generatePresignedUrl(bucketName, objectKey, expiration);
+
+        return Result.success(signedUrl);
+    }
+
+    // ==================== 文件管理 API ====================
+
+    /**
+     * 获取文件信息
+     *
+     * 查询对象的详细信息。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @return 对象信息
+     */
+    @Operation(summary = "获取文件信息", description = "查询对象的详细信息")
+    @GetMapping("/info")
+    public Result getObjectInfo(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey) {
+
+        ObjectDTO objectInfo = objectService.getObjectInfo(bucketName, objectKey);
+
+        return Result.success(objectInfo);
+    }
+
+    /**
+     * 获取文件元数据
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @return 对象元数据
+     */
+    @Operation(summary = "获取文件元数据", description = "查询对象的元数据")
+    @GetMapping("/metadata")
+    public Result getObjectMetadata(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey) {
+
+        ObjectMetadataDTO metadata = objectService.getObjectMetadata(bucketName, objectKey);
+
+        return Result.success(metadata);
+    }
+
+    /**
+     * 删除文件
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param userId 用户 ID
+     * @return 删除结果
+     */
+    @Operation(summary = "删除文件", description = "删除指定的文件")
+    @DeleteMapping
+    public Result deleteObject(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "用户ID", required = true)
+        @RequestParam Long userId) {
+
+        objectService.deleteObject(bucketName, objectKey, userId);
+
+        return Result.success(null, "文件删除成功");
+    }
+
+    /**
+     * 批量删除文件
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKeys 对象键列表
+     * @param userId 用户 ID
+     * @return 批量删除结果
+     */
+    @Operation(summary = "批量删除文件", description = "批量删除多个文件")
+    @DeleteMapping("/batch")
+    public Result deleteObjects(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键列表", required = true)
+        @RequestBody List<String> objectKeys,
+        @Parameter(description = "用户ID", required = true)
+        @RequestParam Long userId) {
+
+        BatchDeleteResultDTO result = objectService.deleteObjects(bucketName, objectKeys, userId);
+
+        return Result.success(result);
+    }
+
+    /**
+     * 复制文件
+     *
+     * @param sourceBucketName 源 Bucket
+     * @param sourceObjectKey 源对象键
+     * @param destinationBucketName 目标 Bucket
+     * @param destinationObjectKey 目标对象键
+     * @param userId 用户 ID
+     * @return 复制结果
+     */
+    @Operation(summary = "复制文件", description = "复制文件到另一个位置")
+    @PostMapping("/copy")
+    public Result copyObject(
+        @Parameter(description = "源Bucket名称", required = true)
+        @RequestParam String sourceBucketName,
+        @Parameter(description = "源对象键", required = true)
+        @RequestParam String sourceObjectKey,
+        @Parameter(description = "目标Bucket名称", required = true)
+        @RequestParam String destinationBucketName,
+        @Parameter(description = "目标对象键", required = true)
+        @RequestParam String destinationObjectKey,
+        @Parameter(description = "用户ID", required = true)
+        @RequestParam Long userId) {
+
+        objectService.copyObject(
+            sourceBucketName, sourceObjectKey,
+            destinationBucketName, destinationObjectKey,
+            userId
+        );
+
+        return Result.success(null, "文件复制成功");
+    }
+
+    /**
+     * 重命名文件
+     *
+     * @param bucketName Bucket 名称
+     * @param sourceObjectKey 源对象键
+     * @param destinationObjectKey 目标对象键
+     * @param userId 用户 ID
+     * @return 重命名结果
+     */
+    @Operation(summary = "重命名文件", description = "重命名文件")
+    @PostMapping("/rename")
+    public Result renameObject(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "源对象键", required = true)
+        @RequestParam String sourceObjectKey,
+        @Parameter(description = "目标对象键", required = true)
+        @RequestParam String destinationObjectKey,
+        @Parameter(description = "用户ID", required = true)
+        @RequestParam Long userId) {
+
+        objectService.renameObject(bucketName, sourceObjectKey, destinationObjectKey, userId);
+
+        return Result.success(null, "文件重命名成功");
+    }
+
+    // ==================== 目录管理 API ====================
+
+    /**
+     * 创建目录
+     *
+     * 在 OSS 中创建一个以 "/" 结尾的对象作为目录。
+     *
+     * @param bucketName Bucket 名称
+     * @param directoryPath 目录路径
+     * @param userId 用户 ID
+     * @return 创建结果
+     */
+    @Operation(summary = "创建目录", description = "创建一个新的目录")
+    @PostMapping("/directory")
+    public Result createDirectory(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "目录路径", required = true)
+        @RequestParam String directoryPath,
+        @Parameter(description = "用户ID", required = true)
+        @RequestParam Long userId) {
+
+        // 确保目录路径以 "/" 结尾
+        if (!directoryPath.endsWith("/")) {
+            directoryPath += "/";
+        }
+
+        // TODO: 实现目录创建逻辑
+        // objectService.createDirectory(bucketName, directoryPath, userId);
+
+        return Result.success(null, "目录创建成功");
+    }
+
+    /**
+     * 删除目录
+     *
+     * 删除目录及其下的所有文件。
+     * ⚠️ 警告：此操作会递归删除目录下的所有内容！
+     *
+     * @param bucketName Bucket 名称
+     * @param directoryPath 目录路径
+     * @param userId 用户 ID
+     * @param recursive 是否递归删除
+     * @return 删除结果
+     */
+    @Operation(summary = "删除目录", description = "删除目录及其所有内容")
+    @DeleteMapping("/directory")
+    public Result deleteDirectory(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "目录路径", required = true)
+        @RequestParam String directoryPath,
+        @Parameter(description = "用户ID", required = true)
+        @RequestParam Long userId,
+        @Parameter(description = "是否递归删除", required = true)
+        @RequestParam Boolean recursive) {
+
+        // TODO: 实现目录删除逻辑
+        // 1. 列出目录下的所有对象
+        // 2. 批量删除对象
+        // 3. 删除目录对象本身
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("bucketName", bucketName);
+        result.put("directoryPath", directoryPath);
+        result.put("deletedCount", 0);
+
+        return Result.success(result, "目录删除成功");
+    }
+
+    /**
+     * 列出目录内容
+     *
+     * 列出指定目录下的文件和子目录。
+     *
+     * @param bucketName Bucket 名称
+     * @param prefix 目录前缀
+     * @param delimiter 分隔符（通常为 "/"）
+     * @param maxKeys 最大返回数量
+     * @return 目录内容列表
+     */
+    @Operation(summary = "列出目录内容", description = "列出指定目录下的文件和子目录")
+    @GetMapping("/list")
+    public Result listDirectoryContents(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "目录前缀")
+        @RequestParam(required = false) String prefix,
+        @Parameter(description = "分隔符")
+        @RequestParam(defaultValue = "/") String delimiter,
+        @Parameter(description = "最大返回数量")
+        @RequestParam(defaultValue = "100") Integer maxKeys) {
+
+        ListObjectsReqDTO request = ListObjectsReqDTO.builder()
+            .bucketName(bucketName)
+            .prefix(prefix)
+            .delimiter(delimiter)
+            .maxKeys(maxKeys)
+            .build();
+
+        ListObjectsResultDTO result = objectService.listObjects(request);
+
+        return Result.success(result);
+    }
+
+    /**
+     * 搜索文件
+     *
+     * 根据文件名或前缀搜索文件。
+     *
+     * @param bucketName Bucket 名称
+     * @param prefix 搜索前缀
+     * @param maxKeys 最大返回数量
+     * @return 搜索结果
+     */
+    @Operation(summary = "搜索文件", description = "根据前缀搜索文件")
+    @GetMapping("/search")
+    public Result searchObjects(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "搜索前缀", required = true)
+        @RequestParam String prefix,
+        @Parameter(description = "最大返回数量")
+        @RequestParam(defaultValue = "100") Integer maxKeys) {
+
+        List<ObjectDTO> results = objectService.listObjectsRecursive(bucketName, prefix, maxKeys);
+
+        return Result.success(results);
+    }
+
+    // ==================== 权限管理 API ====================
+
+    /**
+     * 设置文件 ACL
+     *
+     * 设置对象的访问控制列表。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param aclType ACL 类型
+     * @return 设置结果
+     */
+    @Operation(summary = "设置文件ACL", description = "设置对象的访问权限")
+    @PutMapping("/acl")
+    public Result setObjectAcl(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "ACL类型", required = true)
+        @RequestParam com.duda.file.enums.AclType aclType) {
+
+        objectService.setObjectAcl(bucketName, objectKey, aclType);
+
+        return Result.success(null, "ACL 设置成功");
+    }
+
+    /**
+     * 获取文件 ACL
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @return ACL 类型
+     */
+    @Operation(summary = "获取文件ACL", description = "查询对象的访问权限")
+    @GetMapping("/acl")
+    public Result getObjectAcl(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey) {
+
+        com.duda.file.enums.AclType aclType = objectService.getObjectAcl(bucketName, objectKey);
+
+        return Result.success(aclType);
+    }
+
+    // ==================== 元数据管理 API ====================
+
+    /**
+     * 设置文件元数据
+     *
+     * 更新对象的元数据。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param metadata 元数据
+     * @return 设置结果
+     */
+    @Operation(summary = "设置文件元数据", description = "更新对象的元数据")
+    @PutMapping("/metadata")
+    public Result setObjectMetadata(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "元数据", required = true)
+        @RequestBody ObjectMetadataDTO metadata) {
+
+        objectService.setObjectMetadata(bucketName, objectKey, metadata);
+
+        return Result.success(null, "元数据设置成功");
+    }
+
+    // ==================== 标签管理 API ====================
+
+    /**
+     * 设置对象标签
+     *
+     * 为对象设置标签，用于分类和检索。
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param tags 标签 Map
+     * @return 设置结果
+     */
+    @Operation(summary = "设置对象标签", description = "为对象设置标签")
+    @PutMapping("/tags")
+    public Result setObjectTags(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "标签Map", required = true)
+        @RequestBody Map<String, String> tags) {
+
+        // TODO: 实现标签设置逻辑
+        // objectService.setObjectTags(bucketName, objectKey, tags);
+
+        return Result.success(null, "标签设置成功");
+    }
+
+    /**
+     * 获取对象标签
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @return 标签 Map
+     */
+    @Operation(summary = "获取对象标签", description = "查询对象的标签")
+    @GetMapping("/tags")
+    public Result getObjectTags(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey) {
+
+        // TODO: 实现标签获取逻辑
+        Map<String, String> tags = new HashMap<>();
+        return Result.success(tags);
+    }
+
+    /**
+     * 删除对象标签
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param tagKeys 要删除的标签键列表
+     * @return 删除结果
+     */
+    @Operation(summary = "删除对象标签", description = "删除对象的指定标签")
+    @DeleteMapping("/tags")
+    public Result deleteObjectTags(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "要删除的标签键列表", required = true)
+        @RequestBody List<String> tagKeys) {
+
+        // TODO: 实现标签删除逻辑
+        // objectService.deleteObjectTags(bucketName, objectKey, tagKeys);
+
+        return Result.success(null, "标签删除成功");
+    }
+
+    /**
+     * 按标签搜索对象
+     *
+     * 搜索包含指定标签的所有对象。
+     *
+     * @param bucketName Bucket 名称
+     * @param tagKey 标签键
+     * @param tagValue 标签值（可选）
+     * @return 匹配的对象列表
+     */
+    @Operation(summary = "按标签搜索对象", description = "搜索包含指定标签的对象")
+    @GetMapping("/search-by-tags")
+    public Result searchByTags(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "标签键", required = true)
+        @RequestParam String tagKey,
+        @Parameter(description = "标签值")
+        @RequestParam(required = "") String tagValue) {
+
+        // TODO: 实现按标签搜索逻辑
+        List<ObjectDTO> results = new java.util.ArrayList<>();
+        return Result.success(results);
+    }
+
+    // ==================== 其他辅助功能 ====================
+
+    /**
+     * 检查文件是否存在
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @return 是否存在
+     */
+    @Operation(summary = "检查文件是否存在", description = "检查指定对象是否存在")
+    @GetMapping("/exists")
+    public Result doesObjectExist(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey) {
+
+        Boolean exists = objectService.doesObjectExist(bucketName, objectKey);
+
+        Map<String, Boolean> response = new HashMap<>();
+        response.put("exists", exists);
+
+        return Result.success(response);
+    }
+
+    /**
+     * 获取文件签名 URL（用于预览等临时访问）
+     *
+     * @param bucketName Bucket 名称
+     * @param objectKey 对象键
+     * @param expiration 过期时间（秒）
+     * @param method HTTP 方法（GET、PUT 等）
+     * @return 签名 URL
+     */
+    @Operation(summary = "获取文件签名URL", description = "生成临时访问的签名 URL")
+    @GetMapping("/signed-url")
+    public Result getSignedUrl(
+        @Parameter(description = "Bucket名称", required = true)
+        @RequestParam String bucketName,
+        @Parameter(description = "对象键", required = true)
+        @RequestParam String objectKey,
+        @Parameter(description = "过期时间(秒)", required = true)
+        @RequestParam Integer expiration,
+        @Parameter(description = "HTTP方法")
+        @RequestParam(defaultValue = "GET") String method) {
+
+        // TODO: 实现签名 URL 生成逻辑
+        String signedUrl = downloadService.generatePresignedUrl(bucketName, objectKey, expiration);
+
+        return Result.success(signedUrl);
+    }
+}

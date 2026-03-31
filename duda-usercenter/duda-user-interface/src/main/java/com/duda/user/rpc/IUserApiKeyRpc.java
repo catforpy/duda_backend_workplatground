@@ -30,57 +30,63 @@ public interface IUserApiKeyRpc {
     /**
      * 获取用户的所有API密钥
      *
+     * @param tenantId 租户ID
      * @param userId 用户ID
      * @param includeInactive 是否包含禁用的密钥
      * @return API密钥列表
      */
-    List<UserApiKeyDTO> listUserApiKeys(Long userId, Boolean includeInactive);
+    List<UserApiKeyDTO> listUserApiKeys(Long tenantId, Long userId, Boolean includeInactive);
 
     /**
      * 获取用户的默认API密钥
      *
+     * @param tenantId 租户ID
      * @param userId 用户ID
      * @return 默认API密钥（如果不存在返回null）
      */
-    UserApiKeyDTO getDefaultUserApiKey(Long userId);
+    UserApiKeyDTO getDefaultUserApiKey(Long tenantId, Long userId);
 
     /**
      * 根据密钥ID获取API密钥（用于其他服务调用）
      *
      * 注意：此方法返回的密钥已解密，仅供内部服务调用
      *
+     * @param tenantId 租户ID
      * @param keyId 密钥ID
      * @return API密钥信息（包含解密后的明文密钥）
      */
-    UserApiKeyDTO getUserApiKeyById(Long keyId);
+    UserApiKeyDTO getUserApiKeyById(Long tenantId, Long keyId);
 
     /**
      * 删除用户API密钥
      *
+     * @param tenantId 租户ID
      * @param keyId 密钥ID
      * @param userId 用户ID（用于权限验证）
      * @return 是否成功
      */
-    Boolean deleteUserApiKey(Long keyId, Long userId);
+    Boolean deleteUserApiKey(Long tenantId, Long keyId, Long userId);
 
     /**
      * 设置默认密钥
      *
+     * @param tenantId 租户ID
      * @param keyId 密钥ID
      * @param userId 用户ID
      * @return 是否成功
      */
-    Boolean setDefaultApiKey(Long keyId, Long userId);
+    Boolean setDefaultApiKey(Long tenantId, Long keyId, Long userId);
 
     /**
      * 禁用/启用密钥
      *
+     * @param tenantId 租户ID
      * @param keyId 密钥ID
      * @param userId 用户ID
      * @param active 是否启用
      * @return 是否成功
      */
-    Boolean updateApiKeyStatus(Long keyId, Long userId, Boolean active);
+    Boolean updateApiKeyStatus(Long tenantId, Long keyId, Long userId, Boolean active);
 
     // ==================== 测试方法 ====================
 

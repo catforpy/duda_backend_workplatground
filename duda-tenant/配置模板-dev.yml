@@ -1,0 +1,53 @@
+# ============================================================
+# 开发环境配置 - duda-tenant-provider-dev.yml
+# ============================================================
+# 复制步骤：
+# 1. 登录Nacos: http://120.26.170.213:8848/nacos
+# 2. 点击: 配置管理 → 配置列表 → + 创建配置
+# 3. Data ID: duda-tenant-provider-dev.yml
+# 4. Group: DUDA_TENANT_GROUP
+# 5. 配置格式: YAML
+# 6. 粘贴下方内容 → 发布
+# ============================================================
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://120.26.170.213:3306/duda_tenant?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: duda2024
+    type: com.alibaba.druid.pool.DruidDataSource
+    druid:
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password:
+      database: 0
+      timeout: 5000ms
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+tenant:
+  default:
+    tenant-id: 1
+    tenant-code: DEFAULT
+  quota:
+    check-enabled: true
+    api-call-limit: 10000
+    storage-limit: 10737418240

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.file.provider.mapper.BucketAccountMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.duda.file.provider.entity.BucketAccount">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="bucket_name" property="bucketName" jdbcType="VARCHAR"/>
+        <result column="current_balance" property="currentBalance" jdbcType="DECIMAL"/>
+        <result column="frozen_balance" property="frozenBalance" jdbcType="DECIMAL"/>
+        <result column="available_balance" property="availableBalance" jdbcType="DECIMAL"/>
+        <result column="total_recharge" property="totalRecharge" jdbcType="DECIMAL"/>
+        <result column="total_consumption" property="totalConsumption" jdbcType="DECIMAL"/>
+        <result column="credit_line" property="creditLine" jdbcType="DECIMAL"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="version" property="version" jdbcType="INTEGER"/>
+        <result column="created_time" property="createdTime" jdbcType="TIMESTAMP"/>
+        <result column="updated_time" property="updatedTime" jdbcType="TIMESTAMP"/>
+        <result column="tenant_id" property="tenantId" jdbcType="BIGINT"/>
+    </resultMap>
+
+    <!-- 基础字段列 -->
+    <sql id="Base_Column_List">
+        id, bucket_name, current_balance, frozen_balance, available_balance,
+        total_recharge, total_consumption, credit_line, status, version,
+        created_time, updated_time, tenant_id
+    </sql>
+
+    <!-- 根据Bucket名称查询 -->
+    <select id="selectByBucketName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_account
+        WHERE bucket_name = #{bucketName}
+    </select>
+
+    <!-- 根据租户ID查询账户列表 -->
+    <select id="selectByTenantId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_account
+        WHERE tenant_id = #{tenantId}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 根据状态查询账户列表 -->
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM bucket_account
+        WHERE status = #{status}
+        ORDER BY created_time DESC
+    </select>
+
+    <!-- 充值 -->
+    <update id="recharge">
+        UPDATE bucket_account
+        SET current_balance = current_balance + #{amount},
+            available_balance = available_balance + #{amount},
+            total_recharge = total_recharge + #{amount},
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 扣费（乐观锁） -->
+    <update id="deduct">
+        UPDATE bucket_account
+        SET current_balance = current_balance - #{amount},
+            available_balance = available_balance - #{amount},
+            total_consumption = total_consumption + #{amount},
+            updated_time = NOW(),
+            version = version + 1
+        WHERE bucket_name = #{bucketName}
+          AND version = #{version}
+    </update>
+
+    <!-- 冻结余额（乐观锁） -->
+    <update id="freeze">
+        UPDATE bucket_account
+        SET frozen_balance = frozen_balance + #{amount},
+            available_balance = available_balance - #{amount},
+            updated_time = NOW(),
+            version = version + 1
+        WHERE bucket_name = #{bucketName}
+          AND version = #{version}
+          AND available_balance >= #{amount}
+    </update>
+
+    <!-- 解冻余额（乐观锁） -->
+    <update id="unfreeze">
+        UPDATE bucket_account
+        SET frozen_balance = frozen_balance - #{amount},
+            available_balance = available_balance + #{amount},
+            updated_time = NOW(),
+            version = version + 1
+        WHERE bucket_name = #{bucketName}
+          AND version = #{version}
+          AND frozen_balance >= #{amount}
+    </update>
+
+    <!-- 更新信用额度 -->
+    <update id="updateCreditLine">
+        UPDATE bucket_account
+        SET credit_line = #{creditLine},
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+    <!-- 更新账户状态 -->
+    <update id="updateStatus">
+        UPDATE bucket_account
+        SET status = #{status},
+            updated_time = NOW()
+        WHERE bucket_name = #{bucketName}
+    </update>
+
+</mapper>

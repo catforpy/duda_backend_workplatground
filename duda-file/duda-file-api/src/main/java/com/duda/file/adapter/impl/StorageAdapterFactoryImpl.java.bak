@@ -1,0 +1,117 @@
+package com.duda.file.adapter.impl;
+
+import com.duda.file.adapter.StorageAdapterFactory;
+import com.duda.file.adapter.StorageService;
+import com.duda.file.common.exception.StorageException;
+import com.duda.file.dto.bucket.ApiKeyConfigDTO;
+import com.duda.file.enums.StorageType;
+import org.springframework.stereotype.Component;
+
+/**
+ * 存储服务适配器工厂实现
+ * 负责根据存储类型创建对应的适配器实例
+ *
+ * @author duda
+ * @date 2025-03-13
+ */
+@Component
+public class StorageAdapterFactoryImpl implements StorageAdapterFactory {
+
+    /**
+     * 适配器缓存
+     * key: storageType + accessKeyId
+     * value: StorageService实例
+     */
+    private final java.util.Map<String, StorageService> adapterCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Override
+    public StorageService createAdapter(StorageType storageType, ApiKeyConfigDTO apiKeyConfig) throws StorageException {
+        // 生成缓存键
+        String cacheKey = generateCacheKey(storageType, apiKeyConfig);
+
+        // 从缓存获取
+        StorageService adapter = adapterCache.get(cacheKey);
+        if (adapter != null) {
+            return adapter;
+        }
+
+        // 创建新适配器
+        adapter = createNewAdapter(storageType, apiKeyConfig);
+
+        // 缓存适配器
+        adapterCache.put(cacheKey, adapter);
+
+        return adapter;
+    }
+
+    @Override
+    public StorageService createAliyunOSSAdapter(ApiKeyConfigDTO apiKeyConfig) throws StorageException {
+        return createAdapter(StorageType.ALIYUN_OSS, apiKeyConfig);
+    }
+
+    @Override
+    public StorageService createTencentCOSAdapter(ApiKeyConfigDTO apiKeyConfig) throws StorageException {
+        return createAdapter(StorageType.TENCENT_COS, apiKeyConfig);
+    }
+
+    @Override
+    public StorageService createQiniuKodoAdapter(ApiKeyConfigDTO apiKeyConfig) throws StorageException {
+        return createAdapter(StorageType.QINIU_KODO, apiKeyConfig);
+    }
+
+    @Override
+    public StorageService createMinIOAdapter(ApiKeyConfigDTO apiKeyConfig) throws StorageException {
+        return createAdapter(StorageType.MINIO, apiKeyConfig);
+    }
+
+    /**
+     * 创建新的适配器实例
+     */
+    private StorageService createNewAdapter(StorageType storageType, ApiKeyConfigDTO apiKeyConfig) throws StorageException {
+        switch (storageType) {
+            case ALIYUN_OSS:
+                return new AliyunOSSAdapter(apiKeyConfig);
+
+            case TENCENT_COS:
+                throw new StorageException("ADAPTER_NOT_IMPLEMENTED", "Tencent COS adapter is not implemented yet");
+
+            case QINIU_KODO:
+                throw new StorageException("ADAPTER_NOT_IMPLEMENTED", "Qiniu Kodo adapter is not implemented yet");
+
+            case MINIO:
+                throw new StorageException("ADAPTER_NOT_IMPLEMENTED", "MinIO adapter is not implemented yet");
+
+            default:
+                throw new StorageException("UNSUPPORTED_STORAGE_TYPE", "Unsupported storage type: " + storageType);
+        }
+    }
+
+    /**
+     * 生成缓存键
+     */
+    private String generateCacheKey(StorageType storageType, ApiKeyConfigDTO apiKeyConfig) {
+        return storageType.getCode() + ":" + apiKeyConfig.getAccessKeyId();
+    }
+
+    /**
+     * 清除适配器缓存
+     */
+    public void clearCache() {
+        adapterCache.clear();
+    }
+
+    /**
+     * 清除指定适配器的缓存
+     */
+    public void clearCache(StorageType storageType, String accessKeyId) {
+        String cacheKey = storageType.getCode() + ":" + accessKeyId;
+        adapterCache.remove(cacheKey);
+    }
+
+    /**
+     * 获取缓存的适配器数量
+     */
+    public int getCacheSize() {
+        return adapterCache.size();
+    }
+}

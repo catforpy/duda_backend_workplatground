@@ -31,6 +31,11 @@ public class UserApiKey implements Serializable {
     private Long id;
 
     /**
+     * 租户ID
+     */
+    private Long tenantId;
+
+    /**
      * 用户ID
      */
     private Long userId;

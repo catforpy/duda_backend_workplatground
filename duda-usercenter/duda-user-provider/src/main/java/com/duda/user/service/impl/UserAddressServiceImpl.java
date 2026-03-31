@@ -6,6 +6,7 @@ import com.duda.user.mapper.UserAddressMapper;
 import com.duda.user.po.UserAddressPO;
 import com.duda.user.service.IUserAddressService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -37,6 +38,7 @@ public class UserAddressServiceImpl extends ServiceImpl<UserAddressMapper, UserA
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean setDefaultAddress(Long userId, Long addressId) {
         // 1. 取消该用户的所有默认地址
         QueryWrapper<UserAddressPO> wrapper = new QueryWrapper<>();

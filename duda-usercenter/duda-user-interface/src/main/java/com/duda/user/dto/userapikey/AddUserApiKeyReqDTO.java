@@ -25,6 +25,13 @@ public class AddUserApiKeyReqDTO implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
+     * 租户ID（必填）
+     */
+    @Schema(description = "租户ID", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
+    @NotBlank(message = "租户ID不能为空")
+    private Long tenantId;
+
+    /**
      * 用户名（必填）
      */
     @Schema(description = "用户名", requiredMode = Schema.RequiredMode.REQUIRED, example = "testuser")

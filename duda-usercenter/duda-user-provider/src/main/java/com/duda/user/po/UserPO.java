@@ -26,6 +26,11 @@ public class UserPO {
     private Long id;
 
     /**
+     * 租户ID
+     */
+    private Long tenantId;
+
+    /**
      * 用户名
      */
     private String username;

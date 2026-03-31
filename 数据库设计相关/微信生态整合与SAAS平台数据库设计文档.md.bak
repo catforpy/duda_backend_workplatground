@@ -1,0 +1,4600 @@
+# 微信生态整合与SAAS平台数据库设计文档
+
+## 📋 文档版本信息
+
+- **版本**: v1.0
+- **创建时间**: 2026-03-22
+- **作者**: DudaNexus架构组
+- **适用范围**: 微信小程序代开发SAAS平台
+
+---
+
+## 🎯 一、业务背景概述
+
+### 1.1 平台定位
+
+**都达网（DudaNexus）** 是一个微信小程序代开发SAAS平台，提供以下核心能力：
+
+1. **小程序模板开发** - 为客户开发定制化小程序
+2. **小程序租赁业务** - 平台已有小程序资源租赁
+3. **资质合作模式** - 为无资质主体提供"套壳"服务
+4. **服务商子平台** - 授权服务商构建独立子平台
+
+### 1.2 用户角色体系
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    DudaNexus 平台                        │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│  │ 都达网账户   │  │ 服务商账户    │  │ 平台工作账户  │   │
+│  │             │  │              │  │              │   │
+│  │ - 购买模板   │  │ - 构建子平台  │  │ - 部门管理    │   │
+│  │ - 租赁小程序 │  │ - 服务客户    │  │ - 运营监控    │   │
+│  │ - 资质合作   │  │ - 付费授权    │  │ - 审核流程    │   │
+│  └─────────────┘  └──────────────┘  └──────────────┘   │
+│                          ↓                               │
+│                   ┌──────────────┐                       │
+│                   │  客户账户     │                       │
+│                   │              │                       │
+│                   │ - 小程序用户  │                       │
+│                   │ - 浏览下单   │                       │
+│                   │ - 支付分账   │                       │
+│                   └──────────────┘                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔐 二、都达云平台ID体系详解
+
+> 📌 **重要说明**：本章节介绍都达云平台自建的用户中台ID体系。这是我们系统的核心身份标识机制，微信ID体系作为辅助接入方式，服务于我们平台的用户统一管理需求。
+
+### 2.1 平台架构概述
+
+#### 2.1.1 系统组成
+
+都达云平台由**一个独立用户中台**和**多个业务系统**组成：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    都达云平台架构                              │
+└─────────────────────────────────────────────────────────────┘
+
+【独立用户中台】（基础设施）
+├─ 纯粹的用户管理基础设施
+├─ global_user_id = 跨平台全局ID（UnionID）
+├─ 数据库：user_center
+└─ 提供统一的用户注册、登录、查询API
+
+【业务系统】（平级关系）
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ SAAS平台     │  │ PHP后端      │  │ 其他业务系统  │
+│ (Spring Cloud)│ │ (独立业务)   │  │ (数据分析等) │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                  │                  │
+       └──────────────────┴──────────────────┘
+                  ↓
+        调用独立用户中台的API
+```
+
+#### 2.1.2 核心设计理念
+
+**统一身份，分散管理**
+
+1. **统一身份标识**：所有用户在用户中台拥有唯一的 `global_user_id`
+2. **分散业务管理**：各业务系统维护自己的本地用户ID和业务逻辑
+3. **灵活映射机制**：通过映射表实现跨系统的用户身份识别
+
+### 2.2 核心ID类型详解
+
+#### 2.2.1 ID类型对比表
+
+| ID类型 | 说明 | 唯一性范围 | 所属系统 | 使用场景 |
+|--------|------|-----------|---------|---------|
+| **global_user_id** | 全局用户ID（雪花算法生成） | 跨所有业务系统全局唯一 | 独立用户中台 | 标识同一用户在不同系统中的身份 |
+| **platform_user_id** | SAAS平台本地用户ID | SAAS平台内唯一 | SAAS平台 | SAAS平台的业务逻辑 |
+| **merchant_user_id** | 商户虚拟用户ID | 商户内唯一 | SAAS平台 | 商户视角的用户管理 |
+| **php_user_id** | PHP后端本地用户ID | PHP后端内唯一 | PHP后端 | PHP后端的业务逻辑 |
+| **wechat_unionid** | 微信UnionID | 微信开放平台下唯一 | 微信平台 | 微信生态内的用户识别 |
+| **wechat_openid** | 微信OpenID | 单个小程序内唯一 | 微信平台 | 单个小程序内的用户识别 |
+
+#### 2.2.2 ID体系关系图
+
+```
+都达云平台用户ID体系
+    │
+    ├─ 【独立用户中台】user_center.uc_users
+    │   │
+    │   └─ global_user_id: 100001（雪花算法，全局唯一）
+    │       │
+    │       ├─ 手机号: 13800138000（全局唯一）
+    │       ├─ 邮箱: zhangsan@example.com（全局唯一）
+    │       └─ 微信UnionID: oUUUUU_12345（如果绑定微信）
+    │
+    ├─ 【SAAS平台】user_nexus.users_XX
+    │   │
+    │   ├─ platform_user_id: 5032850826727424（SAAS本地ID）
+    │   ├─ global_user_id: 100001（关联用户中台）
+    │   └─ merchant_user_id: 8001（商户虚拟用户ID）
+    │
+    ├─ 【PHP后端】php_backend.php_users
+    │   │
+    │   ├─ php_user_id: 8001（PHP本地ID）
+    │   └─ global_user_id: 100001（关联用户中台）
+    │
+    └─ 【其他业务系统】other_system.users
+        │
+        ├─ other_user_id: 5001（其他系统本地ID）
+        └─ global_user_id: 100001（关联用户中台）
+```
+
+### 2.3 用户中台数据库设计
+
+#### 2.3.1 核心表结构
+
+**1. uc_users（全局用户表）**
+
+- 存储所有业务系统的全局用户信息
+- `id` 字段即为 `global_user_id`（雪花算法生成）
+- 手机号、邮箱全局唯一
+- 一个用户对应一个 `global_user_id`
+
+**2. uc_wechat_binding（微信绑定表）**
+
+- 管理用户的微信UnionID和OpenID
+- 一个用户可以绑定微信
+- UnionID全局唯一
+
+**3. uc_external_mapping（外部系统映射表）**
+
+- 映射全局用户ID和各业务系统的本地用户ID
+- 实现跨系统的用户身份识别
+
+详细表结构请参考《独立用户中台技术设计手册》第三章"数据库设计"。
+
+#### 2.3.2 数据示例
+
+```sql
+-- uc_users 表（全局用户表）
+| id      | phone        | nickname |
+|---------|--------------|----------|
+| 100001  | 13800138000  | 张三     |
+
+-- uc_wechat_binding 表（微信绑定表）
+| user_id | wechat_unionid  | default_openid |
+|---------|-----------------|----------------|
+| 100001  | oUUUUU_12345   | oAAAAA_xxxxx  |
+
+-- uc_external_mapping 表（外部系统映射表）
+| user_id | system_code | external_user_id |
+|---------|-------------|------------------|
+| 100001  | saas        | 5032850826727424 |
+| 100001  | php         | 8001             |
+```
+
+### 2.4 用户注册与登录流程
+
+#### 2.4.1 用户在SAAS平台注册流程
+
+```
+【用户在SAAS平台注册】
+┌──────────────┐
+│  用户操作    │
+└──────┬───────┘
+       │ 1. 输入手机号、密码、验证码
+       ↓
+┌──────────────┐
+│  SAAS平台    │
+└──────┬───────┘
+       │ 2. 调用用户中台API：查询手机号是否已注册
+       ↓
+┌──────────────────────────────┐
+│  用户中台 API               │
+│  GET /api/user/phone/:phone │
+└──────┬───────────────────────┘
+       │ 3. 查询uc_users表
+       │  返回：用户不存在
+       ↓
+┌──────────────┐
+│  SAAS平台    │
+└──────┬───────┘
+       │ 4. 调用用户中台API：创建全局用户
+       ↓
+┌──────────────────────────────┐
+│  用户中台 API               │
+│  POST /api/user/create       │
+└──────┬───────────────────────┘
+       │ 5. 插入uc_users表
+       │  返回：global_user_id = 100001
+       ↓
+┌──────────────┐
+│  SAAS平台    │
+└──────┬───────┘
+       │ 6. 调用用户中台API：同步外部系统映射
+       ↓
+┌──────────────────────────────┐
+│  用户中台 API               │
+│  POST /api/user/sync-mapping │
+└──────┬───────────────────────┘
+       │ 7. 插入uc_external_mapping表
+       │  返回：同步成功
+       ↓
+┌──────────────┐
+│  SAAS平台    │
+└──────┬───────┘
+       │ 8. 创建SAAS本地用户
+       │  存储global_user_id = 100001
+       │  SAAS本地ID = 5032850826727424
+       ↓
+┌──────────────┐
+│  注册成功    │
+└──────────────┘
+```
+
+#### 2.4.2 用户跨系统登录流程
+
+```
+【用户跨系统登录】
+场景：用户先在SAAS平台注册（手机号13800138000），后在PHP后端登录
+
+┌─────────────────────────────────────────────────────────────┐
+│  第1步：用户在SAAS平台注册                                   │
+│  手机号：13800138000                                         │
+│  全局用户ID：100001（生成）                                   │
+│  SAAS本地ID：5032850826727424                                │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  第2步：用户在PHP后端登录                                    │
+│  输入：13800138000 + 密码                                     │
+└────────────┬────────────────────────────────────────────────┘
+             ↓
+┌─────────────────────────────────────────────────────────────┐
+│  PHP后端                                                    │
+├─────────────────────────────────────────────────────────────┤
+│  1. 调用用户中台API：/api/user/login-or-register             │
+│  POST /api/user/login-or-register                           │
+│  {                                                          │
+│    "phone": "13800138000",                                   │
+│    "login_source": "php"                                   │
+│  }                                                         │
+└────────────┬────────────────────────────────────────────────┘
+             ↓
+┌─────────────────────────────────────────────────────────────┐
+│  用户中台                                                    │
+├─────────────────────────────────────────────────────────────┤
+│  1. 查询uc_users表                                          │
+│     SELECT * FROM uc_users WHERE phone = '13800138000'       │
+│  2. 发现：用户已存在（global_user_id = 100001）              │
+│  3. 生成JWT Token                                          │
+│  4. 返回：                                                  │
+│  {                                                         │
+│    "code": 200,                                             │
+│    "data": {                                               │
+│      "global_user_id": 100001,                              │
+│      "phone": "13800138000",                                │
+│      "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." │
+│    }                                                       │
+│  }                                                         │
+└────────────┬────────────────────────────────────────────────┘
+             ↓
+┌─────────────────────────────────────────────────────────────┐
+│  PHP后端                                                    │
+├─────────────────────────────────────────────────────────────┤
+│  1. 检查本地数据库是否存在该用户                             │
+│  2. 如果不存在，创建本地用户                                 │
+│     INSERT INTO php_users (phone, global_user_id)           │
+│     VALUES ('13800138000', 100001)                          │
+│  3. 返回登录成功                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 2.5 Token管理机制
+
+#### 2.5.1 混合Token系统
+
+都达云平台采用**混合Token系统**，各系统管理自己的Token：
+
+| Token类型 | 用途 | 生成方 | 验证方 |
+|-----------|------|--------|--------|
+| **user_center_token** | 调用用户中台API | 用户中台 | 用户中台 |
+| **saas_token** | 调用SAAS平台API | SAAS平台 | SAAS平台 |
+| **php_token** | 调用PHP后端API | PHP后端 | PHP后端 |
+
+**设计原则**：
+- 系统解耦：各系统管理自己的Token，互不依赖
+- 职责清晰：用户中台Token用于用户中台API，业务系统Token用于业务API
+- 性能优先：Token本地验证，避免跨系统调用
+
+### 2.6 与微信ID体系的对接
+
+#### 2.6.1 对接原则
+
+1. **主次关系**：我们的系统ID体系为主，微信ID体系为辅
+2. **映射关系**：通过 `uc_wechat_binding` 表建立 `global_user_id` 与 `wechat_unionid` 的映射
+3. **业务逻辑**：用户的核心身份由我们系统管理，微信作为登录方式之一
+
+#### 2.6.2 微信登录流程
+
+```
+【用户通过微信登录SAAS平台】
+┌──────────────┐
+│  用户操作    │
+└──────┬───────┘
+       │ 1. 点击"微信登录"
+       ↓
+┌──────────────┐
+│  前端        │
+└──────┬───────┘
+       │ 2. 拉起微信授权
+       │    wx.login() 获取 code
+       ↓
+┌──────────────┐
+│  SAAS平台后端│
+└──────┬───────┘
+       │ 3. 通过code换取微信openid和unionid
+       │    调用微信API
+       ↓
+┌──────────────┐
+│  微信服务器  │
+└──────┬───────┘
+       │ 4. 返回：openid, unionid, session_key
+       ↓
+┌──────────────┐
+│  SAAS平台后端│
+└──────┬───────┘
+       │ 5. 调用用户中台API：查询unionid是否已绑定
+       ↓
+┌──────────────────────────────┐
+│  用户中台 API               │
+│  GET /api/wechat/query      │
+│  ?unionid=oUUUUU_12345      │
+└──────┬───────────────────────┘
+       │ 6. 查询uc_wechat_binding表
+       │  返回：已绑定global_user_id = 100001
+       ↓
+┌──────────────┐
+│  SAAS平台后端│
+└──────┬───────┘
+       │ 7. 获取或创建SAAS本地用户
+       │  返回登录成功
+       ↓
+┌──────────────┐
+│  登录成功    │
+└──────────────┘
+```
+
+### 2.7 SAAS平台数据表调整
+
+为配合独立用户中台，SAAS平台的 `users_XX` 表需要新增字段：
+
+```sql
+-- 在 users_XX 表中新增字段
+ALTER TABLE `users_XX`
+ADD COLUMN `global_user_id` BIGINT COMMENT '全局用户ID（关联用户中台uc_users.id）' AFTER `id`,
+ADD UNIQUE KEY `uk_global_user_id` (`global_user_id`);
+
+-- 说明：
+-- 1. global_user_id：关联用户中台的全局用户ID
+-- 2. 通过global_user_id可以实现跨系统的用户身份识别
+-- 3. 原有的platform_user_id继续使用，不影响现有业务逻辑
+```
+
+### 2.8 API接口对接
+
+#### 2.8.1 核心API列表
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| /api/user/login-or-register | POST | 登录或注册（统一入口） |
+| /api/user/create | POST | 创建全局用户 |
+| /api/user/{globalUserId} | GET | 查询用户信息 |
+| /api/user/sync-mapping | POST | 同步外部系统映射 |
+| /api/wechat/bind | POST | 绑定微信 |
+| /api/wechat/unbind | POST | 解绑微信 |
+| /api/wechat/query | GET | 查询微信绑定 |
+
+#### 2.8.2 SAAS平台调用示例
+
+```java
+/**
+ * SAAS平台：用户注册服务
+ */
+@Service
+public class UserRegisterService {
+
+    @Autowired
+    private UserCenterClient userCenterClient;
+
+    @Autowired
+    private UserMapper userMapper;
+
+    /**
+     * 用户注册
+     */
+    @Transactional
+    public RegisterResult register(RegisterRequest request) {
+        // 1. 查询用户中台，判断手机号是否已注册
+        UserExistResponse existResponse = userCenterClient.checkPhoneExists(request.getPhone());
+
+        Long globalUserId;
+
+        if (existResponse.isExists()) {
+            // 2. 用户已存在，获取全局用户ID
+            globalUserId = existResponse.getGlobalUserId();
+        } else {
+            // 3. 用户不存在，在用户中台创建全局用户
+            CreateUserRequest createRequest = new CreateUserRequest();
+            createRequest.setPhone(request.getPhone());
+            createRequest.setNickname(request.getNickname());
+            createRequest.setRegisterSource("saas");
+
+            CreateUserResponse createResponse = userCenterClient.createUser(createRequest);
+            globalUserId = createResponse.getGlobalUserId();
+        }
+
+        // 4. 同步外部系统映射
+        SyncMappingRequest mappingRequest = new SyncMappingRequest();
+        mappingRequest.setGlobalUserId(globalUserId);
+        mappingRequest.setSystemCode("saas");
+        mappingRequest.setExternalUserId(generateLocalUserId());
+
+        userCenterClient.syncMapping(mappingRequest);
+
+        // 5. 创建SAAS本地用户
+        User localUser = new User();
+        localUser.setId(mappingRequest.getExternalUserId());
+        localUser.setPhone(request.getPhone());
+        localUser.setGlobalUserId(globalUserId); // 存储全局ID
+
+        userMapper.insert(localUser);
+
+        return RegisterResponse.success(globalUserId);
+    }
+}
+```
+
+### 2.9 详细技术文档
+
+更详细的技术实现细节，请参考《独立用户中台技术设计手册》：
+
+- 第三章：数据库设计（uc_users、uc_wechat_binding、uc_external_mapping等表结构）
+- 第四章：业务流程设计（用户注册、登录、跨系统登录等完整流程）
+- 第五章：API接口设计（完整的API接口定义）
+- 第六章：Token管理架构（混合Token系统的详细设计）
+
+---
+
+## 🔐 三、微信ID体系详解
+
+### 2.1 核心概念对比表
+
+| ID类型 | 说明 | 唯一性范围 | 使用场景 | 获取方式 |
+|--------|------|-----------|---------|---------|
+| **AppID** | 应用唯一标识 | 每个应用独立 | 调用微信API、OAuth2.0授权 | 微信开放平台注册后获得 |
+| **AppSecret** | 应用密钥 | 每个应用独立 | 服务端调用微信接口 | 微信开放平台获得（需保密） |
+| **OpenID** | 用户在某个应用下的唯一标识 | 同一用户在不同应用下不同 | 识别用户在小程序内的身份 | 通过OAuth2.0授权获取 |
+| **UnionID** | 用户在同一开放平台下的统一标识 | 同一开放平台下所有应用统一 | 跨应用识别同一用户 | 需要绑定微信开放平台账号 |
+| **access_token** | 接口调用凭证 | 2小时有效期 | 调用微信API | 通过code换取 |
+| **refresh_token** | 刷新凭证 | 180天有效期 | 刷新access_token | OAuth2.0授权时获取 |
+
+### 2.2 ID体系关系图
+
+```
+微信开放平台账号（Company Account）
+    │
+    ├─ AppID: wx8888888888888888 (都达网开放平台)
+    │
+    ├─ 绑定的应用列表
+    │   │
+    │   ├─ 小程序A (AppID: wxaaaa1111)
+    │   │   └─ 用户张三的OpenID: oAAAAA_xxxxx
+    │   │   └─ 用户张三的UnionID: oUUUUU_12345 ← 同一个UnionID
+    │   │
+    │   ├─ 小程序B (AppID: wxbbbb2222)
+    │   │   └─ 用户张三的OpenID: oBBBBB_yyyyy ← 不同的OpenID
+    │   │   └─ 用户张三的UnionID: oUUUUU_12345 ← 但UnionID相同
+    │   │
+    │   ├─ 移动应用C (AppID: wxcccc3333)
+    │   │   └─ 用户张三的OpenID: oCCCCC_zzzzz
+    │   │   └─ 用户张三的UnionID: oUUUUU_12345
+    │   │
+    │   └─ 网站D (AppID: wxdddd4444)
+    │       └─ 用户张三的OpenID: oDDDDD_wwwww
+    │       └─ 用户张三的UnionID: oUUUUU_12345
+    │
+    └─ 关键价值：通过UnionID实现跨应用用户身份统一
+```
+
+### 2.3 OAuth2.0授权流程中的ID获取
+
+```
+用户点击"微信登录"
+    ↓
+前端拉起微信授权
+    ┌─────────────────────────────────────┐
+    │  SendAuth.Req req = new SendAuth.Req();  │
+    │  req.scope = "snsapi_userinfo";      │
+    │  req.state = "random_state";         │
+    └─────────────────────────────────────┘
+    ↓
+用户同意授权
+    ↓
+微信返回临时票据 code
+    ↓
+后端通过 code 调用微信接口
+    ┌─────────────────────────────────────┐
+    │ GET https://api.weixin.qq.com/...   │
+    │ ?appid=APPID                        │
+    │ &secret=SECRET                      │
+    │ &code=CODE                          │
+    │ &grant_type=authorization_code      │
+    └─────────────────────────────────────┘
+    ↓
+微信返回：
+{
+  "access_token": "ACCESS_TOKEN",
+  "expires_in": 7200,
+  "refresh_token": "REFRESH_TOKEN",
+  "openid": "OPENID",              ← 获取到OpenID
+  "scope": "snsapi_userinfo",
+  "unionid": "UNIONID"             ← 如果绑定开放平台，返回UnionID
+}
+    ↓
+使用 access_token 获取用户详细信息
+{
+  "openid": "OPENID",
+  "nickname": "张三",
+  "sex": 1,
+  "province": "广东",
+  "city": "深圳",
+  "country": "中国",
+  "headimgurl": "http://...",
+  "privilege": [],
+  "unionid": "UNIONID"            ← 再次确认UnionID
+}
+```
+
+---
+
+## 📊 三、数据库表结构设计
+
+### 3.1 表分类总览
+
+```
+数据库表分类
+│
+├─ 1. 用户管理模块（User Management）
+│   ├─ users_XX (分片表) - 平台用户表
+│   ├─ user_profiles - 用户扩展信息
+│   ├─ user_wechat_binding - 微信绑定关系
+│   └─ user_auth_tokens - 登录凭证
+│
+├─ 2. 公司管理模块（Company Management）
+│   ├─ companies - 公司信息
+│   ├─ company_qualifications - 资质文件
+│   └─ company_service_providers - 服务商申请
+│
+├─ 3. 小程序管理模块（Mini Program Management）
+│   ├─ mini_programs - 小程序基本信息
+│   ├─ mini_program_templates - 小程序模板
+│   ├─ mini_program_development - 代开发任务
+│   ├─ mini_program_certification - 微信认证
+│   ├─ mini_program_filing - 小程序备案
+│   └─ mini_program_categories - 类目管理
+│
+├─ 4. 商户管理模块（Merchant Management）
+│   ├─ merchants - 商户信息（已存在）
+│   ├─ merchant_users - 商户用户映射（已存在）
+│   └─ merchant_contracts - 商户合同
+│
+├─ 5. 资源管理模块（Resource Management）
+│   ├─ user_oss_config - 用户OSS配置
+│   ├─ user_oss_statistics - OSS使用统计
+│   └─ user_resource_quota - 资源配额
+│
+├─ 6. 支付分账模块（Payment & Profit Sharing）
+│   ├─ payment_orders - 支付订单
+│   ├─ profit_sharing_rules - 分账规则
+│   ├─ profit_sharing_records - 分账记录
+│   └─ settlement_statements - 结算单据
+│
+├─ 7. 开放平台模块（Open Platform）
+│   ├─ open_api_keys - 开放API密钥（已存在）
+│   ├─ api_call_logs - API调用日志（已存在）
+│   └─ third_party_authorizations - 第三方授权
+│
+└─ 8. 系统管理模块（System Management）
+    ├─ roles - 角色表（已存在）
+    ├─ permissions - 权限表（已存在）
+    ├─ user_roles - 用户角色关联（已存在）
+    ├─ role_permissions - 角色权限关联（已存在）
+    └─ system_audit_logs - 系统审计日志
+```
+
+### 3.2 核心表结构设计
+
+#### 3.2.1 平台用户表（分片表）
+
+**表名**: `users_XX` (XX = 00-99)
+
+**分片规则**: `user_shard = user_id % 100`
+
+**设计要点**:
+- 支持水平分片，理论支持10亿+用户
+- 存储用户基础信息和微信ID
+- 支持多种用户类型（都达网账户、服务商账户、平台工作账户）
+
+```sql
+CREATE TABLE `users_00` (
+  -- ========== 主键 ==========
+  `id` BIGINT NOT NULL COMMENT '用户ID（雪花算法，全局唯一）',
+
+  -- ========== 基本信息 ==========
+  `username` VARCHAR(50) NOT NULL COMMENT '用户名（唯一）',
+  `password` VARCHAR(255) COMMENT '密码（BCrypt加密，可选）',
+  `real_name` VARCHAR(100) COMMENT '真实姓名',
+  `phone` VARCHAR(20) COMMENT '手机号（唯一）',
+  `email` VARCHAR(100) COMMENT '邮箱（唯一）',
+  `avatar` VARCHAR(500) COMMENT '头像URL',
+
+  -- ========== 用户类型（核心字段）==========
+  `user_type` VARCHAR(20) NOT NULL DEFAULT 'platform_account' COMMENT '用户类型:
+    - platform_admin: 平台管理员
+    - service_provider: 服务商账户
+    - platform_account: 都达网账户（客户）
+    - backend_admin: 后台工作账户
+    - mini_program_user: 小程序用户（B端用户）',
+
+  -- ========== 微信相关ID（核心设计）==========
+  -- 说明：一个用户可能绑定多个微信账号（开放平台、小程序、移动应用）
+  `wechat_openid` VARCHAR(100) COMMENT '微信OpenID（默认应用）',
+  `wechat_unionid` VARCHAR(100) COMMENT '微信UnionID（全局唯一，绑定开放平台后获取）',
+  `wechat_openid_list` JSON COMMENT '多OpenID存储（JSON格式）:
+    {
+      "mini_program": {
+        "wx_appid_001": "oAAAAA_xxxxx",
+        "wx_appid_002": "oBBBBB_yyyyy"
+      },
+      "mobile_app": {
+        "wxcccc3333": "oCCCCC_zzzzz"
+      },
+      "website": {
+        "wxdddd4444": "oDDDDD_wwwww"
+      }
+    }',
+
+  -- ========== 微信授权信息 ==========
+  `wechat_access_token` VARCHAR(500) COMMENT '微信access_token（AES加密）',
+  `wechat_refresh_token` VARCHAR(500) COMMENT '微信refresh_token（AES加密）',
+  `wechat_token_expire_time` DATETIME COMMENT 'access_token过期时间',
+  `wechat_last_auth_time` DATETIME COMMENT '最后授权时间',
+
+  -- ========== 所属公司/服务商 ==========
+  `company_id` BIGINT COMMENT '所属公司ID（如果是公司账户）',
+  `service_provider_id` BIGINT COMMENT '所属服务商ID（如果是服务商子账户）',
+  `parent_user_id` BIGINT COMMENT '父账户ID（用于子账户场景）',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态:
+    - active: 正常
+    - inactive: 未激活
+    - suspended: 暂停
+    - deleted: 已删除',
+
+  -- ========== 审计字段 ==========
+  `register_ip` VARCHAR(50) COMMENT '注册IP',
+  `register_source` VARCHAR(20) COMMENT '注册来源: web/app/mini_program/api',
+  `last_login_time` DATETIME COMMENT '最后登录时间',
+  `last_login_ip` VARCHAR(50) COMMENT '最后登录IP',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_username` (`username`),
+  UNIQUE KEY `uk_phone` (`phone`),
+  UNIQUE KEY `uk_email` (`email`),
+  UNIQUE KEY `uk_wechat_unionid` (`wechat_unionid`),
+  KEY `idx_user_type` (`user_type`),
+  KEY `idx_status` (`status`),
+  KEY `idx_company_id` (`company_id`),
+  KEY `idx_service_provider_id` (`service_provider_id`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台用户表-分片00';
+```
+
+#### 3.2.2 公司信息表
+
+**表名**: `companies`
+
+**设计要点**:
+- 存储公司主体信息和资质文件
+- 支持多小程序关联
+- 关联服务商账户
+
+```sql
+CREATE TABLE `companies` (
+  `id` BIGINT NOT NULL COMMENT '公司ID（雪花算法）',
+
+  -- ========== 基本信息 ==========
+  `company_name` VARCHAR(200) NOT NULL COMMENT '公司名称',
+  `company_code` VARCHAR(50) NOT NULL COMMENT '公司编码（唯一）',
+  `company_short_name` VARCHAR(100) COMMENT '公司简称',
+
+  -- ========== 资质信息 ==========
+  `license_no` VARCHAR(100) COMMENT '营业执照号',
+  `license_no_type` VARCHAR(20) COMMENT '证件类型:
+    - social_credit_code: 统一社会信用代码（18位）
+    - organization_code: 组织机构代码（9位）
+    - business_license: 营业执照注册号（15位）',
+  `license_url` VARCHAR(500) COMMENT '营业执照图片URL',
+  `legal_person` VARCHAR(100) COMMENT '法人代表姓名',
+  `legal_person_id` VARCHAR(18) COMMENT '法人身份证号',
+  `legal_person_phone` VARCHAR(20) COMMENT '法人电话',
+  `legal_person_wechat` VARCHAR(100) COMMENT '法人微信号（需绑定银行卡）',
+
+  -- ========== 联系信息 ==========
+  `contact_person` VARCHAR(100) COMMENT '联系人',
+  `contact_phone` VARCHAR(20) COMMENT '联系电话',
+  `contact_email` VARCHAR(100) COMMENT '联系邮箱',
+
+  -- ========== 地址信息 ==========
+  `province` VARCHAR(50) COMMENT '省份',
+  `city` VARCHAR(50) COMMENT '城市',
+  `district` VARCHAR(50) COMMENT '区县',
+  `address` VARCHAR(255) COMMENT '详细地址',
+
+  -- ========== 业务信息 ==========
+  `business_scope` TEXT COMMENT '经营范围',
+  `industry` VARCHAR(100) COMMENT '所属行业',
+  `company_type` VARCHAR(20) NOT NULL DEFAULT 'service_provider' COMMENT '公司类型:
+    - service_provider: 服务商
+    - platform: 平台方
+    - merchant: 商户',
+
+  -- ========== 服务商专属字段 ==========
+  `is_service_provider` TINYINT DEFAULT 0 COMMENT '是否为服务商: 0-否 1-是',
+  `service_provider_level` VARCHAR(20) COMMENT '服务商等级:
+    - platinum: 白金服务商
+    - gold: 金牌服务商
+    - silver: 银牌服务商
+    - normal: 普通服务商',
+  `service_provider_expire_time` DATETIME COMMENT '服务商授权过期时间',
+  `service_provider_fee_rate` DECIMAL(5,2) DEFAULT 0.00 COMMENT '服务费抽成比例（0.10 = 10%）',
+
+  -- ========== 微信小程序代开发相关 ==========
+  `wechat_open_platform_appid` VARCHAR(100) COMMENT '微信开放平台AppID（如果已绑定）',
+  `wechat_authorization_code` VARCHAR(200) COMMENT '第三方授权码（代注册时）',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态:
+    - pending: 待审核
+    - active: 已激活
+    - suspended: 暂停
+    - deleted: 已删除',
+  `audit_status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '审核状态:
+    - pending: 待审核
+    - approved: 已通过
+    - rejected: 已拒绝',
+  `audit_time` DATETIME COMMENT '审核时间',
+  `audit_by` BIGINT COMMENT '审核人ID',
+  `audit_remark` VARCHAR(500) COMMENT '审核备注',
+
+  -- ========== 时间信息 ==========
+  `registration_date` DATE COMMENT '注册日期',
+  `remark` VARCHAR(500) COMMENT '备注',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_company_code` (`company_code`),
+  KEY `idx_company_name` (`company_name`),
+  KEY `idx_status` (`status`),
+  KEY `idx_audit_status` (`audit_status`),
+  KEY `idx_is_service_provider` (`is_service_provider`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='公司信息表';
+```
+
+#### 3.2.3 小程序信息表
+
+**表名**: `mini_programs`
+
+**设计要点**:
+- 存储小程序基本信息和微信配置
+- 支持代开发、租赁、合作等多种模式
+- 记录小程序认证和备案状态
+
+```sql
+CREATE TABLE `mini_programs` (
+  `id` BIGINT NOT NULL COMMENT '小程序ID（雪花算法）',
+
+  -- ========== 基本信息 ==========
+  `mini_program_name` VARCHAR(200) NOT NULL COMMENT '小程序名称',
+  `mini_program_code` VARCHAR(50) NOT NULL COMMENT '小程序编码（唯一）',
+  `mini_program_short_name` VARCHAR(100) COMMENT '小程序简称',
+
+  -- ========== 微信配置（核心字段）==========
+  -- 注意：每个小程序都有独立的AppID和AppSecret
+  `wechat_appid` VARCHAR(100) NOT NULL COMMENT '微信小程序AppID（唯一）',
+  `wechat_appsecret` VARCHAR(500) NOT NULL COMMENT '微信小程序AppSecret（AES加密）',
+  `wechat_token` VARCHAR(200) COMMENT '微信消息加密Token',
+  `wechat_encoding_aes_key` VARCHAR(500) COMMENT '微信消息加密Key',
+
+  -- ========== 所属关系 ==========
+  `owner_company_id` BIGINT NOT NULL COMMENT '所属公司ID',
+  `owner_user_id` BIGINT NOT NULL COMMENT '所属用户ID（公司管理员）',
+  `developer_company_id` BIGINT COMMENT '开发者公司ID（代开发模式）',
+  `developer_user_id` BIGINT COMMENT '开发者用户ID',
+
+  -- ========== 业务模式（核心字段）==========
+  `business_mode` VARCHAR(20) NOT NULL DEFAULT 'development' COMMENT '业务模式:
+    - development: 定制开发
+    - template: 模板购买
+    - lease: 租赁模式
+    - cooperation: 资质合作（套壳）',
+
+  -- ========== 小程序模板信息 ==========
+  `template_id` BIGINT COMMENT '模板ID（如果使用模板）',
+  `template_name` VARCHAR(200) COMMENT '模板名称',
+  `template_version` VARCHAR(20) COMMENT '模板版本',
+
+  -- ========== 小程序类型 ==========
+  `mini_program_type` VARCHAR(20) NOT NULL DEFAULT 'retail' COMMENT '小程序类型:
+    - retail: 零售
+    - catering: 餐饮
+    - service: 服务
+    - education: 教育
+    - medical: 医疗
+    - other: 其他',
+  `industry` VARCHAR(100) COMMENT '所属行业',
+
+  -- ========== 小程序类目（微信要求）==========
+  `first_category` VARCHAR(50) COMMENT '一级类目',
+  `second_category` VARCHAR(50) COMMENT '二级类目',
+  `category_qualifications` JSON COMMENT '类目资质文件URL列表（JSON数组）',
+
+  -- ========== 小程序展示信息 ==========
+  `logo` VARCHAR(500) COMMENT '小程序Logo',
+  `qrcode_url` VARCHAR(500) COMMENT '小程序二维码URL',
+  `description` TEXT COMMENT '小程序描述',
+  `intro` TEXT COMMENT '小程序简介（微信后台）',
+  `service_content_types` JSON COMMENT '服务内容类型列表（JSON数组，备案用）',
+
+  -- ========== 微信认证状态 ==========
+  `wechat_certified` TINYINT DEFAULT 0 COMMENT '是否已微信认证: 0-否 1-是',
+  `certification_status` VARCHAR(20) DEFAULT 'none' COMMENT '认证状态:
+    - none: 未认证
+    - pending: 认证中
+    - approved: 已认证
+    - rejected: 认证失败',
+  `certification_time` DATETIME COMMENT '认证时间',
+  `certification_expire_time` DATETIME COMMENT '认证过期时间',
+
+  -- ========== 小程序备案状态 ==========
+  `filing_status` VARCHAR(20) DEFAULT 'none' COMMENT '备案状态:
+    - none: 未备案
+    - pending: 备案中
+    - approved: 已备案
+    - rejected: 备案失败
+    - cancelled: 已注销',
+  `filing_no` VARCHAR(100) COMMENT '备案号',
+  `filing_time` DATETIME COMMENT '备案时间',
+
+  -- ========== 支付配置 ==========
+  `wechat_pay_enabled` TINYINT DEFAULT 0 COMMENT '是否开通微信支付: 0-否 1-是',
+  `wechat_pay_mch_id` VARCHAR(100) COMMENT '微信支付商户号',
+
+  -- ========== 服务器配置 ==========
+  `server_domain` VARCHAR(200) COMMENT '服务器域名',
+  `socket_server_domain` VARCHAR(200) COMMENT 'Socket服务器域名',
+  `upload_domain` VARCHAR(200) COMMENT '上传文件域名',
+  `download_domain` VARCHAR(200) COMMENT '下载文件域名',
+  `business_domain` VARCHAR(200) COMMENT '业务域名',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'inactive' COMMENT '状态:
+    - inactive: 未激活
+    - active: 已激活
+    - suspended: 暂停
+    - deleted: 已删除',
+  `online_status` VARCHAR(20) DEFAULT 'dev' COMMENT '上架状态:
+    - dev: 开发中
+    - review: 审核中
+    - online: 已上架
+    - offline: 已下架',
+
+  -- ========== 时间信息 ==========
+  `authorize_time` DATETIME COMMENT '授权时间',
+  `expire_time` DATE COMMENT '授权过期时间（租赁模式）',
+  `last_publish_time` DATETIME COMMENT '最后发布时间',
+  `remark` VARCHAR(500) COMMENT '备注',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_mini_program_code` (`mini_program_code`),
+  UNIQUE KEY `uk_wechat_appid` (`wechat_appid`),
+  KEY `idx_mini_program_name` (`mini_program_name`),
+  KEY `idx_owner_company_id` (`owner_company_id`),
+  KEY `idx_business_mode` (`business_mode`),
+  KEY `idx_status` (`status`),
+  KEY `idx_online_status` (`online_status`),
+  KEY `idx_filing_status` (`filing_status`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='小程序信息表';
+```
+
+#### 3.2.4 小程序代开发任务表
+
+**表名**: `mini_program_development_tasks`
+
+**设计要点**:
+- 记录小程序代开发的完整流程
+- 对应微信代开发接口的各个步骤
+- 支持任务状态追踪和审核流程
+
+```sql
+CREATE TABLE `mini_program_development_tasks` (
+  `id` BIGINT NOT NULL COMMENT '任务ID（雪花算法）',
+
+  -- ========== 关联信息 ==========
+  `mini_program_id` BIGINT COMMENT '小程序ID（完成后关联）',
+  `client_company_id` BIGINT NOT NULL COMMENT '客户公司ID',
+  `client_user_id` BIGINT NOT NULL COMMENT '客户用户ID',
+  `developer_company_id` BIGINT NOT NULL COMMENT '开发者公司ID（平台或服务商）',
+  `developer_user_id` BIGINT NOT NULL COMMENT '开发者用户ID',
+
+  -- ========== 任务基本信息 ==========
+  `task_no` VARCHAR(50) NOT NULL COMMENT '任务编号（唯一）',
+  `task_name` VARCHAR(200) NOT NULL COMMENT '任务名称',
+  `task_type` VARCHAR(20) NOT NULL COMMENT '任务类型:
+    - register: 代注册小程序
+    - develop: 代开发小程序
+    - certify: 代认证
+    - file: 代备案
+    - all: 全流程代办',
+
+  -- ========== 业务模式 ==========
+  `business_mode` VARCHAR(20) NOT NULL COMMENT '业务模式:
+    - development: 定制开发
+    - template: 模板购买
+    - lease: 租赁模式
+    - cooperation: 资质合作',
+
+  -- ========== 模板信息 ==========
+  `template_id` BIGINT COMMENT '选择的模板ID',
+  `template_name` VARCHAR(200) COMMENT '模板名称',
+
+  -- ========== 任务状态 ==========
+  `task_status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '任务状态:
+    - pending: 待开始
+    - in_progress: 进行中
+    - waiting_client_approval: 等待客户确认
+    - waiting_wechat_audit: 等待微信审核
+    - completed: 已完成
+    - failed: 已失败
+    - cancelled: 已取消',
+
+  -- ========== 当前步骤 ==========
+  `current_step` VARCHAR(50) COMMENT '当前步骤:
+    - basic_info: 基础信息填写
+    - name_audit: 名称审核
+    - certification: 微信认证
+    - filing: 小程序备案
+    - development: 功能开发
+    - testing: 测试验收
+    - launch: 上线发布',
+
+  -- ========== 微信注册信息 ==========
+  `wechat_enterprise_name` VARCHAR(200) COMMENT '企业名称',
+  `wechat_enterprise_code` VARCHAR(100) COMMENT '企业代码',
+  `wechat_enterprise_code_type` VARCHAR(20) COMMENT '企业代码类型',
+  `wechat_legal_person_wechat` VARCHAR(100) COMMENT '法人微信号',
+  `wechat_legal_person_name` VARCHAR(100) COMMENT '法人姓名',
+  `wechat_third_party_phone` VARCHAR(20) COMMENT '第三方联系电话',
+  `wechat_appid` VARCHAR(100) COMMENT '获得的小程序AppID',
+  `wechat_authorization_code` VARCHAR(200) COMMENT '第三方授权码',
+
+  -- ========== 小程序名称 ==========
+  `mini_program_name` VARCHAR(200) COMMENT '小程序名称',
+  `mini_program_name_status` VARCHAR(20) COMMENT '名称审核状态:
+    - pending: 审核中
+    - approved: 已通过
+    - rejected: 已拒绝',
+  `mini_program_name_reject_reason` VARCHAR(500) COMMENT '名称审核拒绝原因',
+
+  -- ========== 微信认证信息 ==========
+  `certification_apply_status` VARCHAR(20) COMMENT '认证申请状态:
+    - none: 未申请
+    - pending: 审核中
+    - approved: 已通过
+    - rejected: 已拒绝',
+  `certification_apply_id` VARCHAR(100) COMMENT '认证任务ID',
+  `certification_order_no` VARCHAR(100) COMMENT '认证订单号',
+  `certification_payment_status` VARCHAR(20) COMMENT '认证支付状态:
+    - unpaid: 未支付
+    - paid: 已支付',
+  `certification_qrcode_url` VARCHAR(500) COMMENT '认证支付二维码URL',
+
+  -- ========== 小程序备案信息 ==========
+  `filing_apply_status` VARCHAR(20) COMMENT '备案申请状态:
+    - none: 未申请
+    - pending: 审核中
+    - approved: 已通过
+    - rejected: 已拒绝',
+  `filing_task_id` VARCHAR(100) COMMENT '备案任务ID',
+  `filing_face_id_task_id` VARCHAR(100) COMMENT '人脸核身任务ID',
+
+  -- ========== 进度信息 ==========
+  `progress_percent` INT DEFAULT 0 COMMENT '进度百分比（0-100）',
+  `estimated_finish_days` INT COMMENT '预计完成天数',
+  `estimated_finish_time` DATETIME COMMENT '预计完成时间',
+
+  -- ========== 费用信息 ==========
+  `total_fee` DECIMAL(10,2) DEFAULT 0.00 COMMENT '总费用（元）',
+  `paid_fee` DECIMAL(10,2) DEFAULT 0.00 COMMENT '已付费用（元）',
+  `payment_status` VARCHAR(20) DEFAULT 'unpaid' COMMENT '支付状态:
+    - unpaid: 未支付
+    - partial: 部分支付
+    - paid: 已支付',
+  `fee_breakdown` JSON COMMENT '费用明细（JSON格式）:
+    {
+      "development_fee": 5000.00,
+      "certification_fee": 300.00,
+      "filing_fee": 0.00,
+      "other_fee": 0.00
+    }',
+
+  -- ========== 时间信息 ==========
+  `start_time` DATETIME COMMENT '开始时间',
+  `finish_time` DATETIME COMMENT '完成时间',
+  `remark` VARCHAR(500) COMMENT '备注',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_task_no` (`task_no`),
+  KEY `idx_mini_program_id` (`mini_program_id`),
+  KEY `idx_client_company_id` (`client_company_id`),
+  KEY `idx_developer_company_id` (`developer_company_id`),
+  KEY `idx_task_status` (`task_status`),
+  KEY `idx_current_step` (`current_step`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='小程序代开发任务表';
+```
+
+#### 3.2.5 用户OSS配置表
+
+**表名**: `user_oss_config`
+
+**设计要点**:
+- 每个用户（都达网账户、服务商账户）拥有独立的OSS存储空间
+- 支持多云存储（阿里云OSS、腾讯云COS、七牛云、MinIO）
+- 关联duda-file模块的bucket_config表
+
+```sql
+CREATE TABLE `user_oss_config` (
+  `id` BIGINT NOT NULL COMMENT '配置ID（雪花算法）',
+
+  -- ========== 关联信息 ==========
+  `user_id` BIGINT NOT NULL COMMENT '用户ID',
+  `user_shard` TINYINT NOT NULL COMMENT '用户分片ID',
+  `bucket_name` VARCHAR(100) NOT NULL COMMENT 'Bucket名称（关联bucket_config表）',
+
+  -- ========== OSS配置 ==========
+  `storage_type` VARCHAR(20) NOT NULL COMMENT '存储类型:
+    - aliyun_oss: 阿里云OSS
+    - tencent_cos: 腾讯云COS
+    - qiniu_kodo: 七牛云Kodo
+    - minio: MinIO',
+
+  -- ========== 配额管理 ==========
+  `max_storage_size` BIGINT COMMENT '最大存储容量（字节）',
+  `max_file_count` INT COMMENT '最大文件数量',
+  `max_file_size` BIGINT COMMENT '单个文件最大大小（字节）',
+
+  -- ========== 当前用量 ==========
+  `current_storage_size` BIGINT DEFAULT 0 COMMENT '当前已用存储（字节）',
+  `current_file_count` INT DEFAULT 0 COMMENT '当前文件数量',
+
+  -- ========== 费用信息 ==========
+  `billing_mode` VARCHAR(20) DEFAULT 'pay_as_you_go' COMMENT '计费模式:
+    - pay_as_you_go: 按量付费
+    - package: 套餐包
+    - free: 免费额度',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态:
+    - active: 正常
+    - suspended: 暂停
+    - expired: 已过期',
+
+  -- ========== 时间信息 ==========
+  `expire_time` DATETIME COMMENT '过期时间（NULL表示永久）',
+  `remark` VARCHAR(500) COMMENT '备注',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_id` (`user_id`),
+  UNIQUE KEY `uk_bucket_name` (`bucket_name`),
+  KEY `idx_storage_type` (`storage_type`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户OSS配置表';
+```
+
+#### 3.2.6 支付订单表
+
+**表名**: `payment_orders`
+
+**设计要点**:
+- 记录小程序用户的支付订单
+- 支持特约商户分账模式
+- 关联微信支付商户号
+
+```sql
+CREATE TABLE `payment_orders` (
+  `id` BIGINT NOT NULL COMMENT '订单ID（雪花算法）',
+
+  -- ========== 订单基本信息 ==========
+  `order_no` VARCHAR(50) NOT NULL COMMENT '订单编号（唯一）',
+  `transaction_id` VARCHAR(50) COMMENT '微信支付交易号',
+
+  -- ========== 关联信息 ==========
+  `mini_program_id` BIGINT NOT NULL COMMENT '小程序ID',
+  `merchant_id` BIGINT NOT NULL COMMENT '商户ID（merchants表）',
+  `merchant_user_id` BIGINT NOT NULL COMMENT '商户用户ID（merchant_users表）',
+  `platform_user_id` BIGINT NOT NULL COMMENT '平台用户ID',
+  `platform_user_shard` TINYINT NOT NULL COMMENT '平台用户分片ID',
+
+  -- ========== 订单信息 ==========
+  `order_type` VARCHAR(20) NOT NULL COMMENT '订单类型',
+  `order_amount` DECIMAL(10,2) NOT NULL COMMENT '订单金额（元）',
+  `actual_payment_amount` DECIMAL(10,2) NOT NULL COMMENT '实际支付金额（元）',
+
+  -- ========== 支付信息 ==========
+  `payment_method` VARCHAR(20) NOT NULL COMMENT '支付方式:
+    - wechat_pay: 微信支付
+    - alipay: 支付宝
+    - balance: 余额支付',
+  `payment_status` VARCHAR(20) NOT NULL DEFAULT 'unpaid' COMMENT '支付状态:
+    - unpaid: 未支付
+    - paying: 支付中
+    - paid: 已支付
+    - refunded: 已退款
+    - cancelled: 已取消',
+
+  -- ========== 分账信息（核心设计）==========
+  `profit_sharing_enabled` TINYINT DEFAULT 0 COMMENT '是否需要分账: 0-否 1-是',
+  `profit_sharing_status` VARCHAR(20) DEFAULT 'pending' COMMENT '分账状态:
+    - pending: 待分账
+    - processing: 分账中
+    - completed: 已完成
+    - failed: 分账失败',
+  `profit_sharing_rules` JSON COMMENT '分账规则（JSON格式）:
+    {
+      "platform_rate": 0.10,  // 平台抽成10%
+      "platform_amount": 10.00,
+      "merchant_amount": 90.00,
+      "platform_account": "platform_account_001",
+      "merchant_account": "merchant_account_001"
+    }',
+
+  -- ========== 时间信息 ==========
+  `order_time` DATETIME NOT NULL COMMENT '下单时间',
+  `payment_time` DATETIME COMMENT '支付时间',
+  `profit_sharing_time` DATETIME COMMENT '分账时间',
+
+  -- ========== 其他信息 ==========
+  `remark` VARCHAR(500) COMMENT '备注',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_transaction_id` (`transaction_id`),
+  KEY `idx_mini_program_id` (`mini_program_id`),
+  KEY `idx_merchant_id` (`merchant_id`),
+  KEY `idx_merchant_user_id` (`merchant_user_id`),
+  KEY `idx_payment_status` (`payment_status`),
+  KEY `idx_profit_sharing_status` (`profit_sharing_status`),
+  KEY `idx_order_time` (`order_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='支付订单表';
+```
+
+#### 3.2.7 资源表（核心资源管理）
+
+**表名**: `resources`
+
+**设计要点**:
+- 统一管理所有资源文件（图片、视频、音频、文档等）
+- 支持OSS存储（关联bucket_config表）
+- 支持资源分类和标签
+- 支持资源复用（一个资源可在多个地方使用）
+
+```sql
+CREATE TABLE `resources` (
+  -- ========== 主键 ==========
+  `id` BIGINT NOT NULL COMMENT '资源ID（雪花算法，全局唯一）',
+
+  -- ========== 基本信息 ==========
+  `resource_name` VARCHAR(200) NOT NULL COMMENT '资源名称',
+  `resource_code` VARCHAR(100) COMMENT '资源编码（唯一标识）',
+  `resource_type` VARCHAR(20) NOT NULL COMMENT '资源类型: image-video-audio-document-other',
+
+  -- ========== 文件信息 ==========
+  `file_name` VARCHAR(500) COMMENT '原始文件名',
+  `file_extension` VARCHAR(20) COMMENT '文件扩展名: jpg/png/mp4/pdf等',
+  `file_size` BIGINT COMMENT '文件大小（字节）',
+  `file_md5` VARCHAR(32) COMMENT '文件MD5值（用于去重）',
+  `mime_type` VARCHAR(100) COMMENT 'MIME类型: image/jpeg/video/mp4等',
+
+  -- ========== 存储信息 ==========
+  `storage_type` VARCHAR(20) NOT NULL DEFAULT 'oss' COMMENT '存储类型: oss-local-cos',
+  `storage_path` VARCHAR(1000) NOT NULL COMMENT '存储路径（URL或相对路径）',
+  `storage_bucket` VARCHAR(100) COMMENT '存储Bucket名称',
+  `cdn_url` VARCHAR(500) COMMENT 'CDN加速URL',
+
+  -- ========== 图片/视频专属字段 ==========
+  `width` INT COMMENT '图片/视频宽度（像素）',
+  `height` INT COMMENT '图片/视频高度（像素）',
+  `duration` INT COMMENT '视频/音频时长（秒）',
+  `thumbnail_url` VARCHAR(500) COMMENT '缩略图URL',
+  `poster_url` VARCHAR(500) COMMENT '视频封面图URL',
+
+  -- ========== 分类与标签 ==========
+  `category_id` BIGINT COMMENT '资源分类ID（关联resource_categories表）',
+  `tags` VARCHAR(500) COMMENT '资源标签（逗号分隔）',
+  `description` TEXT COMMENT '资源描述',
+
+  -- ========== 使用场景 ==========
+  `usage_type` VARCHAR(20) COMMENT '使用场景: banner-logo-icon-background-card_avatar',
+  `usage_page` VARCHAR(100) COMMENT '使用页面: home-list-detail等',
+
+  -- ========== 上传信息 ==========
+  `uploader_id` BIGINT COMMENT '上传者用户ID',
+  `uploader_type` VARCHAR(20) COMMENT '上传者类型: admin-user-system',
+  `upload_ip` VARCHAR(50) COMMENT '上传IP',
+  `upload_source` VARCHAR(20) COMMENT '上传来源: web-api-mini_program',
+
+  -- ========== 访问统计 ==========
+  `view_count` INT DEFAULT 0 COMMENT '查看次数',
+  `download_count` INT DEFAULT 0 COMMENT '下载次数',
+  `use_count` INT DEFAULT 0 COMMENT '被引用次数',
+
+  -- ========== 审核信息 ==========
+  `audit_status` VARCHAR(20) DEFAULT 'approved' COMMENT '审核状态: pending-approved-rejected',
+  `audit_by` BIGINT COMMENT '审核人ID',
+  `audit_time` DATETIME COMMENT '审核时间',
+  `audit_remark` VARCHAR(500) COMMENT '审核备注',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive-deleted',
+  `expire_time` DATETIME COMMENT '过期时间（临时资源）',
+
+  -- ========== 时间信息 ==========
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_resource_code` (`resource_code`),
+  KEY `idx_resource_type` (`resource_type`),
+  KEY `idx_category_id` (`category_id`),
+  KEY `idx_usage_type` (`usage_type`),
+  KEY `idx_audit_status` (`audit_status`),
+  KEY `idx_status` (`status`),
+  KEY `idx_file_md5` (`file_md5`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='资源表';
+```
+
+---
+
+#### 3.2.8 资源分类表
+
+**表名**: `resource_categories`
+
+**设计要点**:
+- 管理资源的分类（如：行业分类、功能分类等）
+- 支持树形结构（父子分类）
+- 支持多层级分类
+
+```sql
+CREATE TABLE `resource_categories` (
+  `id` BIGINT NOT NULL COMMENT '分类ID（雪花算法）',
+  `parent_id` BIGINT NOT NULL DEFAULT 0 COMMENT '父分类ID（0表示顶级分类）',
+  `category_code` VARCHAR(50) NOT NULL COMMENT '分类编码（唯一）',
+  `category_name` VARCHAR(100) NOT NULL COMMENT '分类名称',
+  `category_type` VARCHAR(20) NOT NULL COMMENT '分类类型: industry-function-scene',
+  `category_icon` VARCHAR(500) COMMENT '分类图标',
+  `category_image` VARCHAR(500) COMMENT '分类图片',
+  `description` VARCHAR(500) COMMENT '分类描述',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `level` INT DEFAULT 1 COMMENT '层级: 1-一级 2-二级 3-三级',
+  `path` VARCHAR(200) COMMENT '分类路径: /餐饮/快餐/中式快餐',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_category_code` (`category_code`),
+  KEY `idx_parent_id` (`parent_id`),
+  KEY `idx_category_type` (`category_type`),
+  KEY `idx_status` (`status`),
+  KEY `idx_sort_order` (`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='资源分类表';
+```
+
+---
+
+#### 3.2.9 资源集合表（轮播图集合）
+
+**表名**: `resource_collections`
+
+**设计要点**:
+- 管理资源的集合（如：轮播图集合、精选图片集合等）
+- 一个集合包含多个资源（多对多关系）
+- 支持集合排序和展示配置
+
+```sql
+CREATE TABLE `resource_collections` (
+  `id` BIGINT NOT NULL COMMENT '集合ID（雪花算法）',
+  `collection_code` VARCHAR(50) NOT NULL COMMENT '集合编码（唯一）',
+  `collection_name` VARCHAR(200) NOT NULL COMMENT '集合名称',
+  `collection_type` VARCHAR(20) NOT NULL COMMENT '集合类型: banner-selection-recommendation',
+  `description` TEXT COMMENT '集合描述',
+
+  -- ========== 展示配置 ==========
+  `display_type` VARCHAR(20) DEFAULT 'carousel' COMMENT '展示类型: carousel-grid-list-waterfall',
+  `item_count` INT DEFAULT 5 COMMENT '每页显示数量',
+  `autoplay` TINYINT DEFAULT 1 COMMENT '是否自动轮播: 0-否 1-是',
+  `interval` INT DEFAULT 3000 COMMENT '轮播间隔（毫秒）',
+  `show_indicator` TINYINT DEFAULT 1 COMMENT '是否显示指示器: 0-否 1-是',
+  `show_navigation` TINYINT DEFAULT 1 COMMENT '是否显示导航箭头: 0-否 1-是',
+
+  -- ========== 尺寸配置 ==========
+  `width` INT COMMENT '展示宽度（像素）',
+  `height` INT COMMENT '展示高度（像素）',
+  `aspect_ratio` VARCHAR(20) COMMENT '宽高比: 16:9-4:3-1:1',
+
+  -- ========== 链接配置 ==========
+  `link_type` VARCHAR(20) COMMENT '链接类型: none-page-mini_program-external',
+  `link_url` VARCHAR(500) COMMENT '链接地址',
+  `link_target` VARCHAR(20) DEFAULT '_self' COMMENT '打开方式: _self-_blank',
+
+  -- ========== 使用位置 ==========
+  `page_type` VARCHAR(20) COMMENT '页面类型: home-list-detail',
+  `position_code` VARCHAR(50) COMMENT '位置编码: home_top_banner-list_middle',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive-deleted',
+  `start_time` DATETIME COMMENT '开始时间',
+  `end_time` DATETIME COMMENT '结束时间',
+
+  -- ========== 时间信息 ==========
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_collection_code` (`collection_code`),
+  KEY `idx_collection_type` (`collection_type`),
+  KEY `idx_page_type` (`page_type`),
+  KEY `idx_position_code` (`position_code`),
+  KEY `idx_status` (`status`),
+  KEY `idx_start_end_time` (`start_time`, `end_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='资源集合表';
+```
+
+---
+
+#### 3.2.10 资源集合明细表（多对多关系）
+
+**表名**: `resource_collection_items`
+
+**设计要点**:
+- 存储集合与资源的关联关系（多对多）
+- 支持排序和自定义配置
+
+```sql
+CREATE TABLE `resource_collection_items` (
+  `id` BIGINT NOT NULL COMMENT '主键ID（雪花算法）',
+  `collection_id` BIGINT NOT NULL COMMENT '集合ID（关联resource_collections表）',
+  `resource_id` BIGINT NOT NULL COMMENT '资源ID（关联resources表）',
+
+  -- ========== 顺序配置 ==========
+  `sort_order` INT DEFAULT 0 COMMENT '排序（数字越小越靠前）',
+
+  -- ========== 自定义配置（覆盖资源默认配置）==========
+  `custom_title` VARCHAR(200) COMMENT '自定义标题',
+  `custom_description` TEXT COMMENT '自定义描述',
+  `custom_link_url` VARCHAR(500) COMMENT '自定义链接地址',
+  `custom_thumbnail_url` VARCHAR(500) COMMENT '自定义缩略图',
+
+  -- ========== 显示配置 ==========
+  `is_visible` TINYINT DEFAULT 1 COMMENT '是否显示: 0-隐藏 1-显示',
+  `start_time` DATETIME COMMENT '开始时间',
+  `end_time` DATETIME COMMENT '结束时间',
+
+  -- ========== 时间信息 ==========
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_collection_resource` (`collection_id`, `resource_id`),
+  KEY `idx_collection_id` (`collection_id`),
+  KEY `idx_resource_id` (`resource_id`),
+  KEY `idx_sort_order` (`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='资源集合明细表';
+```
+
+---
+
+#### 3.2.11 轮播图表（CMS核心）
+
+**表名**: `banners`
+
+**设计要点**:
+- 管理轮播图内容
+- 支持定时上下架
+- 支持点击统计
+
+```sql
+CREATE TABLE `banners` (
+  `id` BIGINT NOT NULL COMMENT '轮播图ID（雪花算法）',
+  `banner_code` VARCHAR(50) NOT NULL COMMENT '轮播图编码（唯一）',
+  `banner_title` VARCHAR(200) NOT NULL COMMENT '轮播图标题',
+  `banner_type` VARCHAR(20) NOT NULL COMMENT '类型: image-video',
+
+  -- ========== 资源信息 ==========
+  `resource_id` BIGINT NOT NULL COMMENT '资源ID（关联resources表）',
+  `image_url` VARCHAR(500) COMMENT '图片URL（冗余字段，便于查询）',
+  `video_url` VARCHAR(500) COMMENT '视频URL',
+  `poster_url` VARCHAR(500) COMMENT '视频封面图URL',
+
+  -- ========== 链接信息 ==========
+  `link_type` VARCHAR(20) COMMENT '链接类型: none-page-mini_program-external-activity',
+  `link_url` VARCHAR(500) COMMENT '链接地址',
+  `link_mini_program_appid` VARCHAR(100) COMMENT '跳转小程序AppID',
+  `link_mini_program_path` VARCHAR(500) COMMENT '跳转小程序路径',
+
+  -- ========== 展示配置 ==========
+  `position_code` VARCHAR(50) NOT NULL COMMENT '位置编码: home_top-list_middle',
+  `sort_order` INT DEFAULT 0 COMMENT '排序（数字越小越靠前）',
+
+  -- ========== 统计信息 ==========
+  `click_count` INT DEFAULT 0 COMMENT '点击次数',
+  `view_count` INT DEFAULT 0 COMMENT '展示次数',
+
+  -- ========== 时间管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive-deleted',
+  `start_time` DATETIME COMMENT '开始时间',
+  `end_time` DATETIME COMMENT '结束时间',
+
+  -- ========== 时间信息 ==========
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_banner_code` (`banner_code`),
+  KEY `idx_position_code` (`position_code`),
+  KEY `idx_status` (`status`),
+  KEY `idx_start_end_time` (`start_time`, `end_time`),
+  KEY `idx_sort_order` (`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='轮播图表';
+```
+
+---
+
+#### 3.2.12 页面模板表
+
+**表名**: `page_templates`
+
+**设计要点**:
+- 预定义页面模板（首页模板、列表页模板、详情页模板等）
+- 支持模板分类和预览
+- 模板包含默认的页面配置（JSON格式）
+
+```sql
+CREATE TABLE `page_templates` (
+  `id` BIGINT NOT NULL COMMENT '模板ID（雪花算法）',
+  `template_code` VARCHAR(50) NOT NULL COMMENT '模板编码（唯一）',
+  `template_name` VARCHAR(200) NOT NULL COMMENT '模板名称',
+  `template_type` VARCHAR(20) NOT NULL COMMENT '模板类型: home-list-detail-custom',
+
+  -- ========== 模板信息 ==========
+  `thumbnail_url` VARCHAR(500) COMMENT '模板缩略图',
+  `preview_url` VARCHAR(500) COMMENT '模板预览图',
+  `description` TEXT COMMENT '模板描述',
+
+  -- ========== 适用场景 ==========
+  `applicable_scenes` VARCHAR(200) COMMENT '适用场景: retail-catering-service',
+  `category_id` BIGINT COMMENT '适用分类ID',
+
+  -- ========== 模板配置（核心字段）==========
+  `default_config` JSON COMMENT '默认页面配置（JSON格式）:
+    {
+      "page_name": "首页",
+      "modules": [
+        {
+          "module_type": "banner",
+          "order": 1,
+          "config": {...}
+        }
+      ]
+    }',
+
+  -- ========== 模板样式 ==========
+  `style_config` JSON COMMENT '模板样式配置（JSON格式）:
+    {
+      "primary_color": "#1890ff",
+      "background_color": "#f5f5f5",
+      "font_size": "14px"
+    }',
+
+  -- ========== 状态管理 ==========
+  `is_system` TINYINT DEFAULT 0 COMMENT '是否系统模板: 0-用户自定义 1-系统预设',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive-deleted',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+
+  -- ========== 使用统计 ==========
+  `use_count` INT DEFAULT 0 COMMENT '使用次数',
+
+  -- ========== 时间信息 ==========
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_template_code` (`template_code`),
+  KEY `idx_template_type` (`template_type`),
+  KEY `idx_is_system` (`is_system`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='页面模板表';
+```
+
+---
+
+#### 3.2.13 页面配置表（核心！JSON配置）
+
+**表名**: `page_configs`
+
+**设计要点**:
+- 存储页面配置（JSON格式）
+- 支持多页面（首页、列表页、详情页等）
+- 支持版本管理和历史记录
+- 实现H5页面配置器的数据存储
+
+```sql
+CREATE TABLE `page_configs` (
+  `id` BIGINT NOT NULL COMMENT '配置ID（雪花算法）',
+  `page_code` VARCHAR(50) NOT NULL COMMENT '页面编码（唯一，如: home_001）',
+  `page_name` VARCHAR(200) NOT NULL COMMENT '页面名称',
+  `page_type` VARCHAR(20) NOT NULL COMMENT '页面类型: home-list-detail-custom',
+
+  -- ========== 所属关系 ==========
+  `owner_type` VARCHAR(20) NOT NULL COMMENT '所有者类型: platform-mini_program-user',
+  `owner_id` BIGINT NOT NULL COMMENT '所有者ID（平台/小程序/用户）',
+  `mini_program_id` BIGINT COMMENT '所属小程序ID（如果是小程序页面）',
+
+  -- ========== 模板关联 ==========
+  `template_id` BIGINT COMMENT '使用的模板ID（关联page_templates表）',
+  `template_code` VARCHAR(50) COMMENT '模板编码（冗余字段）',
+
+  -- ========== 页面配置（核心字段！）==========
+  `page_config` JSON NOT NULL COMMENT '页面配置（JSON格式）:
+    {
+      "page_id": "home_001",
+      "page_name": "首页",
+      "page_type": "home",
+      "modules": [
+        {
+          "module_id": "module_banner_001",
+          "module_type": "banner",
+          "module_name": "轮播图",
+          "order": 1,
+          "config": {
+            "margin_top": "0px",
+            "margin_bottom": "10px",
+            "height": "200px",
+            "autoplay": true,
+            "interval": 3000,
+            "show_indicator": true,
+            "resource_source": "collection",
+            "collection_id": 1001
+          }
+        },
+        {
+          "module_id": "module_title_001",
+          "module_type": "title",
+          "module_name": "标题",
+          "order": 2,
+          "config": {
+            "margin_top": "10px",
+            "margin_bottom": "10px",
+            "text": "精选小程序",
+            "text_color": "#333333",
+            "font_size": "18px",
+            "font_weight": "bold",
+            "text_align": "left"
+          }
+        },
+        {
+          "module_id": "module_card_001",
+          "module_type": "mini_program_card",
+          "module_name": "小程序卡片",
+          "order": 3,
+          "config": {
+            "margin_top": "10px",
+            "margin_bottom": "20px",
+            "card_style": "style_1",
+            "columns": 2,
+            "show_price": true,
+            "show_category": true,
+            "data_source": "template",
+            "template_ids": [1001, 1002, 1003],
+            "limit": 10
+          }
+        }
+      ]
+    }',
+
+  -- ========== 样式配置 ==========
+  `style_config` JSON COMMENT '样式配置（JSON格式，覆盖模板默认样式）',
+  `theme_config` JSON COMMENT '主题配置（JSON格式）',
+
+  -- ========== 版本管理 ==========
+  `version` INT DEFAULT 1 COMMENT '版本号',
+  `is_published` TINYINT DEFAULT 0 COMMENT '是否已发布: 0-草稿 1-已发布',
+  `published_version` INT COMMENT '已发布的版本号',
+
+  -- ========== 访问配置 ==========
+  `access_permission` VARCHAR(20) DEFAULT 'public' COMMENT '访问权限: public-protected-private',
+  `access_password` VARCHAR(100) COMMENT '访问密码（如果需要）',
+
+  -- ========== SEO配置 ==========
+  `seo_title` VARCHAR(200) COMMENT 'SEO标题',
+  `seo_keywords` VARCHAR(500) COMMENT 'SEO关键词',
+  `seo_description` VARCHAR(500) COMMENT 'SEO描述',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: draft-active-inactive-deleted',
+
+  -- ========== 时间信息 ==========
+  `publish_time` DATETIME COMMENT '发布时间',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_page_code` (`page_code`),
+  KEY `idx_page_type` (`page_type`),
+  KEY `idx_owner_type` (`owner_type`),
+  KEY `idx_owner_id` (`owner_id`),
+  KEY `idx_mini_program_id` (`mini_program_id`),
+  KEY `idx_is_published` (`is_published`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='页面配置表';
+```
+
+---
+
+#### 3.2.14 页面组件库
+
+**表名**: `page_modules`
+
+**设计要点**:
+- 定义所有可用的页面组件（轮播图、标题、图片、视频、卡片等）
+- 每个组件有默认配置和配置Schema
+- 支持自定义组件
+
+```sql
+CREATE TABLE `page_modules` (
+  `id` BIGINT NOT NULL COMMENT '组件ID（雪花算法）',
+  `module_code` VARCHAR(50) NOT NULL COMMENT '组件编码（唯一，如: banner-title-image-card）',
+  `module_name` VARCHAR(100) NOT NULL COMMENT '组件名称',
+  `module_type` VARCHAR(20) NOT NULL COMMENT '组件类型: basic-media-interactive-form',
+
+  -- ========== 组件信息 ==========
+  `category` VARCHAR(50) COMMENT '组件分类: layout-content-media-form',
+  `icon` VARCHAR(500) COMMENT '组件图标',
+  `thumbnail_url` VARCHAR(500) COMMENT '组件缩略图',
+  `description` TEXT COMMENT '组件描述',
+
+  -- ========== 默认配置 ==========
+  `default_config` JSON COMMENT '默认配置（JSON格式）',
+  `config_schema` JSON COMMENT '配置Schema（JSON Schema格式，用于验证配置合法性）',
+
+  -- ========== 组件模板 ==========
+  `template_html` TEXT COMMENT '组件HTML模板',
+  `template_css` TEXT COMMENT '组件CSS样式',
+  `template_js` TEXT COMMENT '组件JS脚本',
+
+  -- ========== 支持的平台 ==========
+  `supported_platforms` VARCHAR(100) DEFAULT 'web,h5,mini_program' COMMENT '支持的平台',
+
+  -- ========== 状态管理 ==========
+  `is_system` TINYINT DEFAULT 0 COMMENT '是否系统组件: 0-用户自定义 1-系统预设',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive-deprecated',
+
+  -- ========== 使用统计 ==========
+  `use_count` INT DEFAULT 0 COMMENT '使用次数',
+
+  -- ========== 时间信息 ==========
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_module_code` (`module_code`),
+  KEY `idx_module_type` (`module_type`),
+  KEY `idx_category` (`category`),
+  KEY `idx_is_system` (`is_system`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='页面组件库';
+```
+
+---
+
+#### 3.2.15 小程序卡片模板表
+
+**表名**: `mini_program_card_templates`
+
+**设计要点**:
+- 定义小程序卡片的展示样式
+- 支持多种卡片样式（列表式、网格式、瀑布流等）
+- 支持卡片自定义配置
+
+```sql
+CREATE TABLE `mini_program_card_templates` (
+  `id` BIGINT NOT NULL COMMENT '卡片模板ID（雪花算法）',
+  `template_code` VARCHAR(50) NOT NULL COMMENT '模板编码（唯一，如: style_1-style_2）',
+  `template_name` VARCHAR(100) NOT NULL COMMENT '模板名称',
+  `template_type` VARCHAR(20) NOT NULL COMMENT '卡片类型: list-grid-waterfall',
+
+  -- ========== 模板样式 ==========
+  `thumbnail_url` VARCHAR(500) COMMENT '模板缩略图',
+  `preview_url` VARCHAR(500) COMMENT '模板预览图',
+  `description` TEXT COMMENT '模板描述',
+
+  -- ========== 布局配置 ==========
+  `layout_config` JSON COMMENT '布局配置（JSON格式）:
+    {
+      "columns": 2,
+      "gutter": 10,
+      "padding": 10,
+      "card_aspect_ratio": "3:4",
+      "show_logo": true,
+      "show_name": true,
+      "show_price": true,
+      "show_category": true,
+      "show_tags": true,
+      "logo_size": "64x64",
+      "name_lines": 2,
+      "price_position": "bottom"
+    }',
+
+  -- ========== 样式配置 ==========
+  `style_config` JSON COMMENT '样式配置（JSON格式）:
+    {
+      "card_background": "#ffffff",
+      "card_border_radius": "8px",
+      "card_shadow": "0 2px 8px rgba(0,0,0,0.1)",
+      "name_color": "#333333",
+      "name_font_size": "14px",
+      "price_color": "#ff4d4f",
+      "price_font_size": "16px",
+      "tag_color": "#1890ff",
+      "tag_background": "#e6f7ff"
+    }',
+
+  -- ========== 支持的页面类型 ==========
+  `supported_page_types` VARCHAR(100) DEFAULT 'home,list,detail' COMMENT '支持的页面类型',
+
+  -- ========== 状态管理 ==========
+  `is_system` TINYINT DEFAULT 0 COMMENT '是否系统模板: 0-用户自定义 1-系统预设',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive-deprecated',
+
+  -- ========== 使用统计 ==========
+  `use_count` INT DEFAULT 0 COMMENT '使用次数',
+
+  -- ========== 时间信息 ==========
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_template_code` (`template_code`),
+  KEY `idx_template_type` (`template_type`),
+  KEY `idx_is_system` (`is_system`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='小程序卡片模板表';
+```
+
+#### 3.2.16 导航菜单表
+
+**表名**: `navigation_menus`
+
+**设计要点**:
+- 管理网站/小程序的导航菜单
+- 支持多级菜单
+- 支持菜单图标和权限控制
+
+```sql
+CREATE TABLE `navigation_menus` (
+  `id` BIGINT NOT NULL COMMENT '菜单ID（雪花算法）',
+  `parent_id` BIGINT NOT NULL DEFAULT 0 COMMENT '父菜单ID（0表示顶级菜单）',
+  `menu_code` VARCHAR(50) NOT NULL COMMENT '菜单编码（唯一）',
+  `menu_name` VARCHAR(100) NOT NULL COMMENT '菜单名称',
+  `menu_type` VARCHAR(20) NOT NULL COMMENT '菜单类型: main-footer-sidebar',
+
+  -- ========== 菜单信息 ==========
+  `icon` VARCHAR(200) COMMENT '菜单图标',
+  `icon_type` VARCHAR(20) COMMENT '图标类型: icon-image-text',
+  `menu_image` VARCHAR(500) COMMENT '菜单图片',
+
+  -- ========== 链接信息 ==========
+  `link_type` VARCHAR(20) NOT NULL COMMENT '链接类型: page-external-mini_program',
+  `link_url` VARCHAR(500) COMMENT '链接地址',
+  `link_mini_program_appid` VARCHAR(100) COMMENT '跳转小程序AppID',
+  `link_mini_program_path` VARCHAR(500) COMMENT '跳转小程序路径',
+  `open_type` VARCHAR(20) DEFAULT '_self' COMMENT '打开方式: _self-_blank-_parent',
+
+  -- ========== 所属位置 ==========
+  `position_code` VARCHAR(50) NOT NULL COMMENT '位置编码: header_main-footer_main',
+  `owner_type` VARCHAR(20) NOT NULL COMMENT '所有者类型: platform-mini_program',
+  `owner_id` BIGINT NOT NULL COMMENT '所有者ID',
+
+  -- ========== 显示配置 ==========
+  `sort_order` INT DEFAULT 0 COMMENT '排序（数字越小越靠前）',
+  `level` INT DEFAULT 1 COMMENT '层级: 1-一级 2-二级 3-三级',
+  `path` VARCHAR(200) COMMENT '菜单路径: /首页/产品中心',
+  `is_visible` TINYINT DEFAULT 1 COMMENT '是否显示: 0-隐藏 1-显示',
+  `is_enabled` TINYINT DEFAULT 1 COMMENT '是否启用: 0-禁用 1-启用',
+
+  -- ========== 权限控制 ==========
+  `require_login` TINYINT DEFAULT 0 COMMENT '是否需要登录: 0-否 1-是',
+  `permission_code` VARCHAR(100) COMMENT '权限码',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive-deleted',
+  `start_time` DATETIME COMMENT '开始时间',
+  `end_time` DATETIME COMMENT '结束时间',
+
+  -- ========== 时间信息 ==========
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_menu_code` (`menu_code`),
+  KEY `idx_parent_id` (`parent_id`),
+  KEY `idx_position_code` (`position_code`),
+  KEY `idx_owner_type` (`owner_type`),
+  KEY `idx_owner_id` (`owner_id`),
+  KEY `idx_sort_order` (`sort_order`),
+  KEY `idx_is_visible` (`is_visible`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='导航菜单表';
+```
+
+---
+
+#### 3.2.17 文章表（CMS）
+
+**表名**: `articles`
+
+**设计要点**:
+- 管理文章内容（新闻、公告、帮助文档等）
+- 支持富文本和Markdown
+- 支持文章分类和标签
+- 支持定时发布
+
+```sql
+CREATE TABLE `articles` (
+  `id` BIGINT NOT NULL COMMENT '文章ID（雪花算法）',
+  `article_code` VARCHAR(50) NOT NULL COMMENT '文章编码（唯一）',
+  `article_title` VARCHAR(200) NOT NULL COMMENT '文章标题',
+  `article_type` VARCHAR(20) NOT NULL COMMENT '文章类型: news-announcement-help-document',
+
+  -- ========== 文章内容 ==========
+  `content` LONGTEXT COMMENT '文章内容（富文本HTML）',
+  `content_markdown` LONGTEXT COMMENT '文章内容（Markdown格式）',
+  `summary` TEXT COMMENT '文章摘要',
+
+  -- ========== 封面图 ==========
+  `cover_image_id` BIGINT COMMENT '封面图资源ID',
+  `cover_image_url` VARCHAR(500) COMMENT '封面图URL（冗余字段）',
+
+  -- ========== 分类与标签 ==========
+  `category_id` BIGINT COMMENT '文章分类ID',
+  `tags` VARCHAR(500) COMMENT '文章标签（逗号分隔）',
+
+  -- ========== SEO配置 ==========
+  `seo_title` VARCHAR(200) COMMENT 'SEO标题',
+  `seo_keywords` VARCHAR(500) COMMENT 'SEO关键词',
+  `seo_description` VARCHAR(500) COMMENT 'SEO描述',
+
+  -- ========== 作者信息 ==========
+  `author_id` BIGINT COMMENT '作者用户ID',
+  `author_name` VARCHAR(100) COMMENT '作者姓名',
+
+  -- ========== 发布配置 ==========
+  `publish_status` VARCHAR(20) NOT NULL DEFAULT 'draft' COMMENT '发布状态: draft-published-offline',
+  `publish_time` DATETIME COMMENT '发布时间',
+  `is_top` TINYINT DEFAULT 0 COMMENT '是否置顶: 0-否 1-是',
+  `is_hot` TINYINT DEFAULT 0 COMMENT '是否热门: 0-否 1-是',
+  `is_recommend` TINYINT DEFAULT 0 COMMENT '是否推荐: 0-否 1-是',
+
+  -- ========== 访问统计 ==========
+  `view_count` INT DEFAULT 0 COMMENT '浏览次数',
+  `like_count` INT DEFAULT 0 COMMENT '点赞次数',
+  `comment_count` INT DEFAULT 0 COMMENT '评论次数',
+  `share_count` INT DEFAULT 0 COMMENT '分享次数',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive-deleted',
+  `allow_comment` TINYINT DEFAULT 1 COMMENT '是否允许评论: 0-否 1-是',
+
+  -- ========== 时间信息 ==========
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_article_code` (`article_code`),
+  KEY `idx_article_type` (`article_type`),
+  KEY `idx_category_id` (`category_id`),
+  KEY `idx_publish_status` (`publish_status`),
+  KEY `idx_is_top` (`is_top`),
+  KEY `idx_is_hot` (`is_hot`),
+  KEY `idx_is_recommend` (`is_recommend`),
+  KEY `idx_publish_time` (`publish_time`),
+  KEY `idx_view_count` (`view_count`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章表';
+```
+
+---
+
+#### 3.2.18 文章分类表
+
+**表名**: `article_categories`
+
+**设计要点**:
+- 管理文章分类
+- 支持树形结构
+
+```sql
+CREATE TABLE `article_categories` (
+  `id` BIGINT NOT NULL COMMENT '分类ID（雪花算法）',
+  `parent_id` BIGINT NOT NULL DEFAULT 0 COMMENT '父分类ID（0表示顶级分类）',
+  `category_code` VARCHAR(50) NOT NULL COMMENT '分类编码（唯一）',
+  `category_name` VARCHAR(100) NOT NULL COMMENT '分类名称',
+  `category_icon` VARCHAR(500) COMMENT '分类图标',
+  `category_image` VARCHAR(500) COMMENT '分类图片',
+  `description` TEXT COMMENT '分类描述',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `level` INT DEFAULT 1 COMMENT '层级: 1-一级 2-二级 3-三级',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active-inactive',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_category_code` (`category_code`),
+  KEY `idx_parent_id` (`parent_id`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章分类表';
+```
+
+---
+
+#### 3.2.19 平台统一用户表（UnionID表）⭐核心设计
+
+**表名**: `platform_union_users`
+
+**设计要点**:
+- 类似微信开放平台的UnionID机制
+- 实现跨后端系统的用户身份统一
+- 同一个用户在不同后端有不同的ID，但有唯一的UnionID
+- 支持用户信息的同步和一致性
+
+```sql
+CREATE TABLE `platform_union_users` (
+  -- ========== 主键 ==========
+  `id` BIGINT NOT NULL COMMENT '主键ID（雪花算法）',
+  `platform_unionid` VARCHAR(50) NOT NULL COMMENT '平台统一UnionID（全局唯一，如：UNI2026032212345678）',
+
+  -- ========== 基本信息 ==========
+  `phone` VARCHAR(20) COMMENT '手机号（全局唯一）',
+  `email` VARCHAR(100) COMMENT '邮箱（全局唯一）',
+  `real_name` VARCHAR(100) COMMENT '真实姓名',
+  `nickname` VARCHAR(50) COMMENT '昵称',
+  `avatar` VARCHAR(500) COMMENT '头像URL',
+
+  -- ========== 统一身份信息 ==========
+  `identity_source` VARCHAR(20) NOT NULL COMMENT '身份来源: java-php-third_party',
+  `original_system` VARCHAR(20) NOT NULL COMMENT '原始注册系统: java-php-other',
+  `original_register_time` DATETIME COMMENT '原始注册时间',
+
+  -- ========== 扩展信息 ==========
+  `gender` TINYINT COMMENT '性别：0-未知 1-男 2-女',
+  `birthday` DATE COMMENT '生日',
+  `province` VARCHAR(50) COMMENT '省份',
+  `city` VARCHAR(50) COMMENT '城市',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态：active-active-inactive-deleted',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_platform_unionid` (`platform_unionid`),
+  UNIQUE KEY `uk_phone` (`phone`),
+  UNIQUE KEY `uk_email` (`email`),
+  KEY `idx_identity_source` (`identity_source`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台统一用户表（UnionID表）';
+```
+
+---
+
+#### 3.2.20 跨平台用户映射表（多后端ID映射）
+
+**表名**: `cross_platform_user_mappings`
+
+**设计要点**:
+- 记录同一用户在不同后端系统的ID映射关系
+- 支持多个后端系统（Java、PHP、Python等）
+- 通过UnionID关联所有后端的用户ID
+
+```sql
+CREATE TABLE `cross_platform_user_mappings` (
+  -- ========== 主键 ==========
+  `id` BIGINT NOT NULL COMMENT '主键ID（雪花算法）',
+
+  -- ========== 关联UnionID ==========
+  `platform_unionid` VARCHAR(50) NOT NULL COMMENT '平台统一UnionID（关联platform_union_users表）',
+
+  -- ========== 后端系统信息 ==========
+  `backend_system` VARCHAR(20) NOT NULL COMMENT '后端系统：java-php-python-node-go-other',
+  `backend_system_name` VARCHAR(100) COMMENT '后端系统名称（如：都达网Java后端）',
+
+  -- ========== 该后端系统的用户信息 ==========
+  `backend_user_id` BIGINT NOT NULL COMMENT '该后端系统的用户ID',
+  `backend_user_shard` TINYINT COMMENT '用户分片ID（如果该后端使用分片）',
+  `backend_username` VARCHAR(50) COMMENT '该后端系统的用户名',
+  `backend_phone` VARCHAR(20) COMMENT '该后端系统的手机号（冗余字段）',
+  `backend_email` VARCHAR(100) COMMENT '该后端系统的邮箱（冗余字段）',
+
+  -- ========== 绑定信息 ==========
+  `binding_type` VARCHAR(20) NOT NULL DEFAULT 'auto' COMMENT '绑定类型：auto-自动绑定 manual-manual binding',
+  `binding_source` VARCHAR(20) NOT NULL COMMENT '绑定来源：java-php-admin-api',
+  `binding_time` DATETIME NOT NULL COMMENT '绑定时间',
+
+  -- ========== 同步信息 ==========
+  `last_sync_time` DATETIME COMMENT '最后同步时间',
+  `sync_status` VARCHAR(20) DEFAULT 'synced' COMMENT '同步状态：synced-pending-failed',
+  `sync_fail_reason` VARCHAR(500) COMMENT '同步失败原因',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态：active-active-inactive',
+  `is_primary` TINYINT DEFAULT 0 COMMENT '是否主账号：0-否 1-是（该用户的主系统）',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_unionid_backend` (`platform_unionid`, `backend_system`, `backend_user_id`),
+  KEY `idx_platform_unionid` (`platform_unionid`),
+  KEY `idx_backend_system` (`backend_system`),
+  KEY `idx_backend_user_id` (`backend_user_id`),
+  KEY `idx_backend_phone` (`backend_phone`),
+  KEY `idx_binding_time` (`binding_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='跨平台用户映射表';
+```
+
+---
+
+#### 3.2.21 外部系统用户表（记录其他后端的用户信息）
+
+**表名**: `external_system_users`
+
+**设计要点**:
+- 记录外部系统（PHP等后端）的用户信息
+- 作为用户身份的"发现表"和"缓存表"
+- 支持API查询验证用户身份
+
+```sql
+CREATE TABLE `external_system_users` (
+  -- ========== 主键 ==========
+  `id` BIGINT NOT NULL COMMENT '主键ID（雪花算法）',
+
+  -- ========== 外部系统信息 ==========
+  `external_system` VARCHAR(20) NOT NULL COMMENT '外部系统：java-php-python-node-go-other',
+  `external_system_name` VARCHAR(100) COMMENT '外部系统名称',
+
+  -- ========== 该外部系统的用户信息 ==========
+  `external_user_id` BIGINT NOT NULL COMMENT '外部系统的用户ID',
+  `external_user_shard` TINYINT COMMENT '外部系统用户分片ID',
+  `external_username` VARCHAR(50) COMMENT '外部系统用户名',
+  `external_phone` VARCHAR(20) COMMENT '外部系统手机号',
+  `external_email` VARCHAR(100) COMMENT '外部系统邮箱',
+
+  -- ========== 用户基本信息（从外部系统获取）==========
+  `real_name` VARCHAR(100) COMMENT '真实姓名',
+  `nickname` VARCHAR(50) COMMENT '昵称',
+  `avatar` VARCHAR(500) COMMENT '头像URL',
+  `gender` TINYINT COMMENT '性别',
+  `status` VARCHAR(20) COMMENT '外部系统用户状态',
+
+  -- ========== API访问信息 ==========
+  `api_endpoint` VARCHAR(200) COMMENT '外部系统API地址',
+  `api_auth_method` VARCHAR(20) COMMENT 'API认证方式：api_key-jwt-oauth2',
+  `api_access_token` VARCHAR(500) COMMENT 'API访问令牌',
+  `api_token_expire_time` DATETIME COMMENT '令牌过期时间',
+
+  -- ========== 验证信息 ==========
+  `is_verified` TINYINT DEFAULT 0 COMMENT '是否已验证：0-未验证 1-已验证',
+  `verified_time` DATETIME COMMENT '验证时间',
+  `verify_method` VARCHAR(20) COMMENT '验证方式：api-manual',
+
+  -- ========== 关联UnionID（如果已绑定）==========
+  `platform_unionid` VARCHAR(50) COMMENT '关联的UnionID（绑定成功后填写）',
+
+  -- ========== 同步信息 ==========
+  `last_sync_time` DATETIME COMMENT '最后同步时间',
+  `sync_status` VARCHAR(20) DEFAULT 'pending' COMMENT '同步状态：pending-synced-failed',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态：active-inactive-deleted',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_external_system_user` (`external_system`, `external_user_id`),
+  UNIQUE KEY `uk_external_phone` (`external_system`, `external_phone`),
+  KEY `idx_platform_unionid` (`platform_unionid`),
+  KEY `idx_external_phone` (`external_phone`),
+  KEY `idx_is_verified` (`is_verified`),
+  KEY `idx_sync_status` (`sync_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='外部系统用户表';
+```
+
+---
+
+#### 3.2.22 用户系统绑定关系表（双向绑定）
+
+**表名**: `user_system_bindings`
+
+**设计要点**:
+- 记录用户在不同系统间的绑定关系
+- 支持双向绑定验证
+- 记录绑定和解绑的历史
+
+```sql
+CREATE TABLE `user_system_bindings` (
+  -- ========== 主键 ==========
+  `id` BIGINT NOT NULL COMMENT '主键ID（雪花算法）',
+
+  -- ========== 绑定标识 ==========
+  `binding_code` VARCHAR(50) NOT NULL COMMENT '绑定编码（唯一，如：BIND2026032212345678）',
+
+  -- ========== 用户信息 ==========
+  `phone` VARCHAR(20) NOT NULL COMMENT '手机号（全局唯一，用于绑定）',
+  `email` VARCHAR(100) COMMENT '邮箱（全局唯一，用于绑定）',
+
+  -- ========== Java后端用户信息 ==========
+  `java_user_id` BIGINT COMMENT 'Java后端用户ID',
+  `java_user_shard` TINYINT COMMENT 'Java后端用户分片ID',
+  `java_username` VARCHAR(50) COMMENT 'Java后端用户名（冗余字段）',
+
+  -- ========== PHP后端用户信息 ==========
+  `php_user_id` BIGINT COMMENT 'PHP后端用户ID',
+  `php_user_shard` TINYINT COMMENT 'PHP后端用户分片ID',
+  `php_username` VARCHAR(50) COMMENT 'PHP后端用户名（冗余字段）',
+
+  -- ========== 其他后端用户信息（预留）==========
+  `python_user_id` BIGINT COMMENT 'Python后端用户ID',
+  `go_user_id` BIGINT COMMENT 'Go后端用户ID',
+  `node_user_id` BIGINT COMMENT 'Node后端用户ID',
+  `other_systems` JSON COMMENT '其他后端系统用户信息（JSON格式）：
+
+    {
+      "system_a": {"user_id": "xxx", "username": "xxx"},
+      "system_b": {"user_id": "yyy", "username": "yyy"}
+    }',
+
+  -- ========== 绑定信息 ==========
+  `binding_type` VARCHAR(20) NOT NULL DEFAULT 'auto' COMMENT '绑定类型：auto-自动绑定 manual-manual binding',
+  `binding_source` VARCHAR(20) NOT NULL COMMENT '绑定来源：java-php-admin-api',
+  `binding_method` VARCHAR(20) COMMENT '绑定方式：phone-email-api-code',
+
+  -- ========== 验证信息 ==========
+  `verify_code` VARCHAR(10) COMMENT '验证码',
+  `verify_ip` VARCHAR(50) COMMENT '验证IP',
+  `verify_time` DATETIME COMMENT '验证时间',
+  `verify_method` VARCHAR(20) COMMENT '验证方式：sms-email-admin',
+
+  -- ========== 操作信息 ==========
+  `operator_id` BIGINT COMMENT '操作人ID',
+  `operator_name` VARCHAR(50) COMMENT '操作人姓名',
+  `operation_remark` VARCHAR(500) COMMENT '操作备注',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态：pending-待验证 bound-已绑定 failed-验证失败',
+  `is_verified` TINYINT DEFAULT 0 COMMENT '是否已验证：0-未验证 1-已验证',
+
+  -- ========== 解绑信息 ==========
+  `unbind_time` DATETIME COMMENT '解绑时间',
+  `unbind_reason` VARCHAR(200) COMMENT '解绑原因',
+  `unbind_operator_id` BIGINT COMMENT '解绑操作人ID',
+
+  -- ========== 同步信息 ==========
+  `sync_status` VARCHAR(20) DEFAULT 'pending' COMMENT '同步状态：pending-synced-failed',
+  `sync_java_to_php` TINYINT DEFAULT 0 COMMENT '是否已同步Java到PHP：0-未同步 1-已同步',
+  `sync_php_to_java` TINYINT DEFAULT 0 COMMENT '是否已同步PHP到Java：0-未同步 1-已同步',
+  `last_sync_time` DATETIME COMMENT '最后同步时间',
+  `sync_error_message` VARCHAR(500) COMMENT '同步错误信息',
+
+  -- ========== 时间信息 ==========
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_binding_code` (`binding_code`),
+  UNIQUE KEY `uk_phone` (`phone`),
+  UNIQUE KEY `uk_email` (`email`),
+  KEY `idx_java_user_id` (`java_user_id`),
+  KEY `idx_php_user_id` (`php_user_id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_binding_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户系统绑定关系表';
+```
+
+---
+
+#### 3.2.23 跨平台数据同步日志表
+
+**表名**: `cross_platform_sync_logs`
+
+**设计要点**:
+- 记录所有跨平台的数据同步操作
+- 支持同步失败重试
+- 用于审计和问题排查
+
+```sql
+CREATE TABLE `cross_platform_sync_logs` (
+  -- ========== 主键 ==========
+  `id` BIGINT NOT NULL COMMENT '日志ID（雪花算法）',
+
+  -- ========== 同步任务信息 ==========
+  `task_id` VARCHAR(50) NOT NULL COMMENT '同步任务ID（唯一）',
+  `task_type` VARCHAR(20) NOT NULL COMMENT '同步任务类型：user_info-order-product',
+  `task_source` VARCHAR(20) NOT NULL COMMENT '同步发起方：java-php-other',
+  `task_target` VARCHAR(20) NOT NULL COMMENT '同步目标方：java-php-other',
+
+  -- ========== 同步内容 ==========
+  `sync_action` VARCHAR(20) NOT NULL COMMENT '同步操作：create-update-delete-query',
+  `sync_data_type` VARCHAR(20) NOT NULL COMMENT '同步数据类型：user-order-product',
+  `sync_data_json` JSON COMMENT '同步数据内容（JSON格式）',
+
+  -- ========== 用户标识 ==========
+  `platform_unionid` VARCHAR(50) COMMENT '平台UnionID',
+  `java_user_id` BIGINT COMMENT 'Java后端用户ID',
+  `php_user_id` BIGINT COMMENT 'PHP后端用户ID',
+  `business_id` BIGINT COMMENT '业务数据ID（订单ID、商品ID等）',
+
+  -- ========== 同步结果 ==========
+  `sync_status` VARCHAR(20) NOT NULL COMMENT '同步状态：pending-processing-success-failed',
+  `http_status_code` INT COMMENT 'HTTP状态码',
+  `response_body` TEXT COMMENT '响应体（JSON格式）',
+  `error_message` VARCHAR(500) COMMENT '错误信息',
+  `retry_count` INT DEFAULT 0 COMMENT '重试次数',
+  `max_retry` INT DEFAULT 3 COMMENT '最大重试次数',
+
+  -- ========== API调用信息 ==========
+  `api_url` VARCHAR(500) COMMENT 'API地址',
+  `api_method` VARCHAR(10) COMMENT 'API方法：GET-POST-PUT-DELETE',
+  `request_body` TEXT COMMENT '请求体（JSON格式）',
+  `request_headers` TEXT COMMENT '请求头（JSON格式）',
+
+  -- ========== 时间信息 ==========
+  `start_time` DATETIME NOT NULL COMMENT '开始时间',
+  `end_time` DATETIME COMMENT '结束时间',
+  `duration_ms` BIGINT COMMENT '耗时（毫秒）',
+
+  -- ========== 时间信息 ==========
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_task_id` (`task_id`),
+  KEY `idx_task_type` (`task_type`),
+  KEY `idx_task_source` (`task_source`),
+  KEY `idx_sync_status` (`sync_status`),
+  KEY `idx_platform_unionid` (`platform_unionid`),
+  KEY `idx_java_user_id` (`java_user_id`),
+  KEY `idx_php_user_id` (`php_user_id`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='跨平台数据同步日志表';
+```
+
+---
+
+#### 3.2.24 跨平台API调用配置表（双向API配置）
+
+**表名**: `cross_platform_api_configs`
+
+**设计要点**:
+- 配置各个后端系统的API访问信息
+- 支持双向API调用（Java→PHP，PHP→Java）
+- 包含认证信息和限流配置
+
+```sql
+CREATE TABLE `cross_platform_api_configs` (
+  -- ========== 主键 ==========
+  `id` BIGINT NOT NULL COMMENT '配置ID（雪花算法）',
+
+  -- ========== 后端系统信息 ==========
+  `backend_system` VARCHAR(20) NOT NULL COMMENT '后端系统：java-php-other',
+  `backend_system_name` VARCHAR(100) NOT NULL COMMENT '后端系统名称',
+  `backend_system_code` VARCHAR(50) NOT NULL COMMENT '后端系统编码（唯一）',
+
+  -- ========== API访问配置 ==========
+  `api_base_url` VARCHAR(200) NOT NULL COMMENT 'API基础URL',
+  `api_version` VARCHAR(20) DEFAULT 'v1' COMMENT 'API版本',
+  `api_timeout` INT DEFAULT 30000 COMMENT 'API超时时间（毫秒）',
+
+  -- ========== 认证配置 ==========
+  `auth_type` VARCHAR(20) NOT NULL COMMENT '认证方式：api_key-jwt-oauth2-none',
+  `app_id` VARCHAR(100) COMMENT '应用ID（如果是api_key或oauth2）',
+  `app_secret` VARCHAR(500) COMMENT '应用密钥（AES加密）',
+  `access_token` VARCHAR(500) COMMENT '访问令牌（JWT或OAuth2）',
+  `token_expire_time` DATETIME COMMENT '令牌过期时间',
+  `refresh_token` VARCHAR(500) COMMENT '刷新令牌',
+
+  -- ========== 限流配置 ==========
+  `rate_limit_enabled` TINYINT DEFAULT 1 COMMENT '是否启用限流：0-否 1-是',
+  `rate_limit_per_second` INT DEFAULT 10 COMMENT '每秒请求次数限制',
+  `rate_limit_per_minute` INT DEFAULT 600 COMMENT '每分钟请求次数限制',
+  `rate_limit_per_hour` INT DEFAULT 10000 COMMENT '每小时请求次数限制',
+
+  -- ========== IP白名单 ==========
+  `ip_whitelist_enabled` TINYINT DEFAULT 0 COMMENT '是否启用IP白名单：0-否 1-是',
+  `ip_whitelist` JSON COMMENT 'IP白名单（JSON格式）：["192.168.1.100", "192.168.1.101"]',
+
+  -- ========== 权限配置 ==========
+  `allowed_apis` JSON COMMENT '允许调用的API列表（JSON格式）：
+    {
+      "user_info": ["/api/user/info", "/api/user/profile"],
+      "order_info": ["/api/order/list", "/api/order/detail"],
+      "data_sync": ["/api/sync/user", "/api/sync/order"]
+    }',
+
+  -- ========== 状态管理 ==========
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态：active-active-inactive-deleted',
+  `is_available` TINYINT DEFAULT 1 COMMENT '是否可用：0-不可用 1-可用',
+  `last_check_time` DATETIME COMMENT '最后检查时间',
+  `check_result` VARCHAR(20) COMMENT '检查结果：success-failed-timeout',
+
+  -- ========== 时间信息 ==========
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `create_by` VARCHAR(50) COMMENT '创建人',
+  `update_by` VARCHAR(50) COMMENT '更新人',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_backend_system_code` (`backend_system_code`),
+  KEY `idx_backend_system` (`backend_system`),
+  KEY `idx_status` (`status`),
+  KEY `idx_is_available` (`is_available`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='跨平台API调用配置表';
+```
+
+---
+
+#### 3.2.25 平台UnionID分配注册表（中央服务核心表）⭐
+
+**设计说明**：这是中央UnionID分配服务的核心表，用于实现跨后端系统（Java + PHP）的统一用户身份管理。
+
+```sql
+CREATE TABLE `platform_unionid_registry` (
+  `id` BIGINT NOT NULL COMMENT '主键ID（雪花算法）',
+  `platform_unionid` VARCHAR(50) NOT NULL COMMENT '平台统一UnionID（全局唯一，如：UNI2026032212345678）',
+
+  -- 身份标识（用于生成或匹配UnionID）
+  `phone` VARCHAR(20) COMMENT '手机号（全局唯一，用于确定性哈希生成）',
+  `email` VARCHAR(100) COMMENT '邮箱（全局唯一）',
+  `identity_hash` VARCHAR(64) COMMENT '身份哈希值（SHA256(phone+salt)，用于快速查找）',
+
+  -- 分配信息
+  `allocate_system` VARCHAR(20) NOT NULL COMMENT '分配系统：java-php-third_party',
+  `allocate_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '分配时间',
+  `allocate_ip` VARCHAR(50) COMMENT '分配请求IP',
+  `allocate_source` VARCHAR(100) COMMENT '分配来源（应用标识）',
+
+  -- 生成方式
+  `generate_method` VARCHAR(20) NOT NULL COMMENT '生成方式：central-中央服务分配 hash-确定性哈希 redis-Redis INCR uuid-UUID',
+  `generate_sequence` BIGINT COMMENT '生成序列号（如果是序列生成方式）',
+
+  -- 绑定状态
+  `binding_status` TINYINT NOT NULL DEFAULT 1 COMMENT '绑定状态：1-已绑定 2-已解绑',
+  `bound_systems` JSON COMMENT '已绑定的后端系统列表：["java", "php"]',
+
+  -- 状态管理
+  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1-正常 2-已冻结 3-已删除',
+  `remark` VARCHAR(500) COMMENT '备注',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0-未删除 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_platform_unionid` (`platform_unionid`),
+  UNIQUE KEY `uk_identity_hash` (`identity_hash`),
+  UNIQUE KEY `uk_phone` (`phone`),
+  UNIQUE KEY `uk_email` (`email`),
+  KEY `idx_allocate_system` (`allocate_system`),
+  KEY `idx_binding_status` (`binding_status`),
+  KEY `idx_status` (`status`),
+  KEY `idx_allocate_time` (`allocate_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台UnionID分配注册表（中央服务核心表）';
+```
+
+**核心设计要点**：
+
+1. **唯一性保证**：
+   - `platform_unionid`：全局唯一，通过中央服务统一分配
+   - `identity_hash`：基于手机号的哈希值，用于快速查找和去重
+   - `phone`/`email`：全局唯一索引，防止重复分配
+
+2. **生成方式支持**：
+   - `central`：中央服务直接分配（推荐）
+   - `hash`：基于手机号确定性哈希生成（备用方案）
+   - `redis`：基于Redis INCR的分布式序列
+   - `uuid`：UUID+冲突重试
+
+3. **绑定追踪**：
+   - `bound_systems`：JSON字段记录已绑定的后端系统列表
+   - `binding_status`：跟踪当前绑定状态
+
+---
+
+### 3.3 中央UnionID服务实现方案（异构后端：Java + PHP）
+
+#### 3.3.1 架构设计
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     中央UnionID分配服务                            │
+│                  (可选用Java/PHP/Go实现)                          │
+└─────────────────────────────────────────────────────────────────┘
+                          ▲
+                          │ HTTP/REST API
+                          │ POST /api/unionid/allocate
+          ┌───────────────┴───────────────┐
+          │                               │
+┌─────────────────────┐         ┌─────────────────────┐
+│  Java后端           │         │  PHP后端            │
+│  (Spring Cloud)     │         │  (Laravel/ThinkPHP) │
+│                     │         │                     │
+│  - 用户注册          │         │  - 用户注册          │
+│  - 用户登录          │         │  - 用户登录          │
+│  - 手机号验证        │         │  - 手机号验证        │
+└─────────────────────┘         └─────────────────────┘
+```
+
+#### 3.3.2 实现方案对比
+
+| 方案 | 技术栈 | 优势 | 劣势 | 推荐度 |
+|-----|--------|-----|-----|--------|
+| **方案1：Spring Cloud微服务** | Java + Spring Boot + MyBatis | 与Java后端技术栈一致，便于维护 | PHP后端需要额外SDK | ⭐⭐⭐⭐⭐ |
+| **方案2：PHP独立服务** | PHP + Laravel/ThinkPHP | 与PHP后端技术栈一致，便于PHP调用 | 性能相对较低 | ⭐⭐⭐⭐ |
+| **方案3：Go高性能服务** | Go + Gin + GORM | 高性能、低延迟，适合高频调用 | 开发成本稍高 | ⭐⭐⭐⭐ |
+| **方案4：云原生分布式服务** | 阿里云/腾讯云分布式ID服务 | 无需维护，高可用 | 依赖第三方，有成本 | ⭐⭐⭐ |
+
+**推荐方案**：**方案1（Spring Cloud微服务）** 或 **方案2（PHP独立服务）**
+
+- 如果Java后端是主要系统，选择方案1
+- 如果PHP后端业务量较大，选择方案2
+- 如果两个后端业务量相当，可以考虑两个服务都部署，互为备份
+
+#### 3.3.3 核心API设计
+
+**API 1：分配UnionID（用于新用户注册）**
+
+```
+POST /api/unionid/allocate
+Content-Type: application/json
+Authorization: Bearer {app_secret}
+
+Request Body:
+{
+  "phone": "13900139001",
+  "email": "user@example.com",
+  "system": "java",
+  "source": "user_register"
+}
+
+Response (Success):
+{
+  "code": 200,
+  "message": "UnionID分配成功",
+  "data": {
+    "platform_unionid": "UNI2026032212345678",
+    "phone": "13900139001",
+    "allocate_time": "2026-03-22 10:30:00",
+    "generate_method": "central"
+  }
+}
+
+Response (Already Exists):
+{
+  "code": 409,
+  "message": "该手机号已分配UnionID",
+  "data": {
+    "platform_unionid": "UNI2026032212345678",
+    "phone": "13900139001",
+    "allocate_time": "2026-03-21 15:20:00",
+    "bound_systems": ["java"]
+  }
+}
+```
+
+**API 2：查询UnionID（用于用户登录）**
+
+```
+POST /api/unionid/query
+Content-Type: application/json
+Authorization: Bearer {app_secret}
+
+Request Body:
+{
+  "phone": "13900139001"
+}
+
+Response (Success):
+{
+  "code": 200,
+  "message": "查询成功",
+  "data": {
+    "platform_unionid": "UNI2026032212345678",
+    "phone": "13900139001",
+    "bound_systems": ["java", "php"],
+    "binding_status": 1
+  }
+}
+
+Response (Not Found):
+{
+  "code": 404,
+  "message": "该手机号未分配UnionID"
+}
+```
+
+**API 3：绑定后端系统（用于关联后端用户ID）**
+
+```
+POST /api/unionid/bind
+Content-Type: application/json
+Authorization: Bearer {app_secret}
+
+Request Body:
+{
+  "platform_unionid": "UNI2026032212345678",
+  "system": "php",
+  "backend_user_id": 10001,
+  "backend_user_shard": 0
+}
+
+Response (Success):
+{
+  "code": 200,
+  "message": "绑定成功",
+  "data": {
+    "platform_unionid": "UNI2026032212345678",
+    "bound_systems": ["java", "php"]
+  }
+}
+```
+
+#### 3.3.4 Java后端调用示例（Spring Cloud）
+
+```java
+@Service
+public class UnionIDService {
+
+    @Value("${unionid.central.service.url}")
+    private String centralServiceUrl;
+
+    @Value("${unionid.app.id}")
+    private String appId;
+
+    @Value("${unionid.app.secret}")
+    private String appSecret;
+
+    private RestTemplate restTemplate;
+
+    /**
+     * 用户注册时分配UnionID
+     */
+    public String allocateUnionID(String phone, String email) {
+        String url = centralServiceUrl + "/api/unionid/allocate";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Authorization", "Bearer " + appSecret);
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("phone", phone);
+        requestBody.put("email", email);
+        requestBody.put("system", "java");
+        requestBody.put("source", "user_register");
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+
+        try {
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+
+            if (response.getStatusCode() == HttpStatus.OK) {
+                Map<String, Object> data = (Map<String, Object>) response.getBody().get("data");
+                return (String) data.get("platform_unionid");
+            } else if (response.getStatusCode() == HttpStatus.CONFLICT) {
+                // 手机号已分配UnionID，直接返回
+                Map<String, Object> data = (Map<String, Object>) response.getBody().get("data");
+                return (String) data.get("platform_unionid");
+            } else {
+                throw new RuntimeException("UnionID分配失败");
+            }
+        } catch (Exception e) {
+            // 降级处理：使用本地哈希生成
+            return generateHashUnionID(phone);
+        }
+    }
+
+    /**
+     * 降级方案：基于手机号哈希生成UnionID
+     */
+    private String generateHashUnionID(String phone) {
+        String hash = DigestUtils.sha256Hex("DUDA_NEXUS_SALT_" + phone);
+        return "UNI" + hash.substring(0, 16);
+    }
+}
+```
+
+#### 3.3.5 PHP后端调用示例（Laravel）
+
+```php
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+class UnionIDService
+{
+    protected $centralServiceUrl;
+    protected $appId;
+    protected $appSecret;
+
+    public function __construct()
+    {
+        $this->centralServiceUrl = config('unionid.central_service_url');
+        $this->appId = config('unionid.app_id');
+        $this->appSecret = config('unionid.app_secret');
+    }
+
+    /**
+     * 用户注册时分配UnionID
+     */
+    public function allocateUnionID($phone, $email = null)
+    {
+        $url = $this->centralServiceUrl . '/api/unionid/allocate';
+
+        try {
+            $response = Http::withToken($this->appSecret)
+                ->post($url, [
+                    'phone' => $phone,
+                    'email' => $email,
+                    'system' => 'php',
+                    'source' => 'user_register'
+                ]);
+
+            if ($response->successful()) {
+                return $response->json()['data']['platform_unionid'];
+            } elseif ($response->status() === 409) {
+                // 手机号已分配UnionID，直接返回
+                return $response->json()['data']['platform_unionid'];
+            } else {
+                Log::error('UnionID分配失败', ['response' => $response->json()]);
+                return $this->generateHashUnionID($phone);
+            }
+        } catch (\Exception $e) {
+            Log::error('UnionID服务异常', ['error' => $e->getMessage()]);
+            return $this->generateHashUnionID($phone);
+        }
+    }
+
+    /**
+     * 降级方案：基于手机号哈希生成UnionID
+     */
+    private function generateHashUnionID($phone)
+    {
+        $hash = hash('sha256', 'DUDA_NEXUS_SALT_' . $phone);
+        return 'UNI' . substr($hash, 0, 16);
+    }
+}
+```
+
+#### 3.3.6 部署建议
+
+1. **高可用部署**：
+   - 中央服务至少部署2个实例，使用负载均衡
+   - 数据库使用主从复制，读写分离
+
+2. **降级方案**：
+   - 如果中央服务不可用，后端自动降级为本地哈希生成
+   - 确保哈希算法一致：`SHA256(phone + 统一salt)`
+
+3. **监控告警**：
+   - 监控API响应时间、成功率
+   - 设置告警阈值：响应时间 > 100ms，成功率 < 99.9%
+
+---
+
+### 3.4 公司ID体系关系图
+
+#### 3.4.1 ID体系层次结构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   都达网（DudaNexus）平台                        │
+│                                                             层级1 │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+                          │ 全局唯一标识
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              平台统一UnionID (platform_unionid)                  │
+│              格式：UNI2026032212345678 (18位)                    │
+│              作用：跨后端系统的统一用户身份标识                    │
+│              表：platform_union_users, platform_unionid_registry  │
+│                                                             层级2 │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+                          │ 映射关系
+          ┌───────────────┴───────────────┐
+          ▼                               ▼
+┌─────────────────────┐         ┌─────────────────────┐
+│  Java后端用户ID      │         │  PHP后端用户ID      │
+│  (java_user_id)     │         │  (php_user_id)      │
+│  格式：1000000001    │         │  格式：1000000001    │
+│  表：users_00-99     │         │  表：php_users       │
+│  分片：00-99         │         │  分片：按需          │
+│                 层级3a  │         │               层级3b │
+└─────────────────────┘         └─────────────────────┘
+          │                               │
+          │ 映射表                        │ 映射表
+          ▼                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│            cross_platform_user_mappings（跨平台映射表）            │
+│            记录：platform_unionid ↔ backend_user_id               │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+                          │ 所属关系
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      公司/商户 (Company/Merchant)                 │
+│                      company_id / merchant_id                     │
+│                      表：companies, merchants                     │
+│                                                             层级4 │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+                          │ 拥有/开发
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   小程序 (Mini Program)                           │
+│                   mini_program_id                                 │
+│                   mini_app_appid（微信AppID）                     │
+│                   mini_app_name（小程序名称）                      │
+│                   表：mini_programs                               │
+│                                                             层级5 │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+                          │ 用户在小程序中的虚拟身份
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                商户用户 (Merchant User)                           │
+│                merchant_user_id（虚拟ID，如：M1001_001）          │
+│                mini_app_openid（该小程序的OpenID）                │
+│                mini_app_unionid（微信UnionID）                    │
+│                表：merchant_users                                 │
+│                                                             层级6 │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+                          │ 产生
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      订单 (Order)                                 │
+│                      order_id                                     │
+│                      merchant_id（商户ID）                        │
+│                      merchant_user_id（商户用户ID）                │
+│                      表：payment_orders                           │
+│                                                             层级7 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.4.2 ID类型详细说明
+
+| ID类型 | 格式示例 | 唯一性范围 | 生成方式 | 存储表 | 主要用途 |
+|--------|---------|-----------|---------|--------|---------|
+| **platform_unionid** | UNI2026032212345678 | 全局唯一（跨平台） | 中央服务分配 | platform_union_users, platform_unionid_registry | 跨后端系统的统一用户标识 |
+| **java_user_id** | 1000000001 | Java后端唯一 | 雪花算法 | users_00-99 | Java后端用户主键 |
+| **php_user_id** | 1000000001 | PHP后端唯一 | 自增/雪花 | php_users | PHP后端用户主键 |
+| **company_id** | 1001 | 全局唯一 | 雪花算法 | companies | 公司/商户唯一标识 |
+| **merchant_id** | 1001 | 全局唯一 | 雪花算法 | merchants | 商户唯一标识 |
+| **mini_program_id** | 2001 | 全局唯一 | 雪花算法 | mini_programs | 小程序唯一标识 |
+| **mini_app_appid** | wxaaaa1111aaaa1111 | 微信全局唯一 | 微信分配 | mini_programs, merchants | 微信小程序应用标识 |
+| **mini_app_openid** | oAAAAA_xxxxxxxxxxxxxx | 单个小程序内唯一 | 微信授权 | merchant_users | 用户在小程序内的唯一标识 |
+| **mini_app_unionid** | oUUUUU_1234567890 | 微信开放平台下唯一 | 微信授权 | merchant_users | 微信跨应用用户标识 |
+| **merchant_user_id** | M1001_001 | 单个商户小程序内唯一 | 系统生成 | merchant_users | 商户小程序内的虚拟用户ID |
+| **order_id** | 3000000000000001 | 全局唯一 | 雪花算法 | payment_orders | 订单唯一标识 |
+
+#### 3.4.3 ID映射关系表
+
+| 源ID | 目标ID | 映射方式 | 映射表 |
+|------|--------|---------|--------|
+| **phone** | **platform_unionid** | 1对1 | platform_unionid_registry.uk_phone |
+| **platform_unionid** | **java_user_id** | 1对1 | cross_platform_user_mappings |
+| **platform_unionid** | **php_user_id** | 1对1 | cross_platform_user_mappings |
+| **java_user_id** | **merchant_user_id** | 1对N | merchant_users (merchant_id + merchant_user_id) |
+| **mini_app_openid** | **merchant_user_id** | 1对1 | merchant_users.uk_merchant_openid |
+| **mini_app_unionid** | **platform_unionid** | 1对1 | platform_union_users (通过unionid匹配) |
+| **merchant_id** | **mini_app_appid** | 1对1 | merchants.mini_app_appid |
+| **merchant_user_id** | **order_id** | 1对N | payment_orders.merchant_user_id |
+
+#### 3.4.4 核心查询场景
+
+**场景1：通过手机号查询所有后端的用户ID**
+
+```sql
+-- Step 1: 通过手机号查询UnionID
+SELECT platform_unionid FROM platform_unionid_registry WHERE phone = '13900139001';
+
+-- Step 2: 通过UnionID查询所有后端的用户ID
+SELECT backend_system, backend_user_id, backend_user_shard
+FROM cross_platform_user_mappings
+WHERE platform_unionid = 'UNI2026032212345678';
+```
+
+**场景2：通过Java用户ID查询PHP用户ID**
+
+```sql
+-- Step 1: 通过Java用户ID查询UnionID
+SELECT platform_unionid
+FROM cross_platform_user_mappings
+WHERE backend_system = 'java' AND backend_user_id = 1000000001;
+
+-- Step 2: 通过UnionID查询PHP用户ID
+SELECT backend_user_id, backend_user_shard
+FROM cross_platform_user_mappings
+WHERE backend_system = 'php' AND platform_unionid = 'UNI2026032212345678';
+```
+
+**场景3：通过微信OpenID查询平台UnionID**
+
+```sql
+-- Step 1: 通过OpenID查询merchant_user
+SELECT merchant_id, platform_user_id, mini_app_unionid
+FROM merchant_users
+WHERE mini_app_openid = 'oAAAAA_xxxxxxxxxxxxxx';
+
+-- Step 2: 通过platform_user_id查询UnionID（如果有unionid字段）
+-- 或者通过mini_app_unionid直接关联
+SELECT platform_unionid
+FROM platform_union_users
+WHERE mini_app_unionid = 'oUUUUU_1234567890';
+```
+
+---
+
+### 3.5 后端间API调用设计（B2B开放平台）
+
+#### 3.5.1 设计原则
+
+都达网Java后端作为数据核心，需要向其他后端系统（PHP、Python、Node.js等）提供开放API接口，用于查询都达网账户的订单、支付、用户等数据。
+
+**核心原则**：
+
+1. **安全第一**：所有API必须经过认证鉴权，敏感数据脱敏
+2. **限流保护**：防止恶意刷接口，保护系统稳定性
+3. **版本控制**：API支持版本号，方便后续升级
+4. **标准化响应**：统一的响应格式和错误码
+5. **可追溯**：完整的调用日志记录，便于问题排查
+
+**与前端API的区别**：
+
+| 对比项 | 前端API | 后端间API（B2B） |
+|--------|---------|------------------|
+| **调用方** | 小程序前端、H5前端 | 其他后端系统（PHP/Python等） |
+| **认证方式** | 用户登录态（JWT/Session） | AppID + AppSecret |
+| **限流策略** | 用户维度限流 | AppID维度限流 |
+| **数据权限** | 用户只能看自己的数据 | 根据授权范围查询 |
+| **响应格式** | 通常简化 | 包含更多元数据 |
+| **日志要求** | 基础日志 | 完整的审计日志 |
+
+---
+
+#### 3.5.2 认证鉴权机制
+
+**认证流程**：
+
+```
+┌─────────────┐                ┌─────────────┐                ┌─────────────┐
+│  PHP后端    │                │  Java后端   │                │  数据库     │
+│  (调用方)   │                │  (API提供方) │                │             │
+└─────────────┘                └─────────────┘                └─────────────┘
+       │                               │                              │
+       │  1. 申请AppID+AppSecret        │                              │
+       │<──────────────────────────────│                              │
+       │                               │                              │
+       │  2. 生成签名                    │                              │
+       │  signature = MD5(              │                              │
+       │    app_id +                    │                              │
+       │    timestamp +                 │                              │
+       │    nonce +                     │                              │
+       │    app_secret                  │                              │
+       │  )                             │                              │
+       │                               │                              │
+       │  3. 发起API请求                │                              │
+       │  POST /api/b2b/order/query     │                              │
+       │  Headers:                      │                              │
+       │    X-App-Id: php_backend_001   │                              │
+       │    X-Timestamp: 1679000000     │                              │
+       │    X-Nonce: random123          │                              │
+       │    X-Signature: abc123...      │                              │
+       │                               │                              │
+       │───────────────────────────────>│                              │
+       │                               │  4. 验证签名                   │
+       │                               │  5. 查询AppSecret             │
+       │                               │─────────────────────────────>│
+       │                               │<─────────────────────────────│
+       │                               │  6. 检查权限                   │
+       │                               │  7. 检查限流                   │
+       │                               │  8. 执行业务逻辑               │
+       │                               │  9. 记录调用日志               │
+       │                               │─────────────────────────────>│
+       │  10. 返回结果                  │<─────────────────────────────│
+       │<──────────────────────────────│                              │
+       │                               │                              │
+```
+
+**签名算法（防止请求被篡改）**：
+
+```java
+/**
+ * 签名生成算法
+ */
+public String generateSignature(String appId, Long timestamp, String nonce, String appSecret) {
+    // 1. 参数排序拼接
+    String sortedParams = Stream.of(
+        "app_id=" + appId,
+        "timestamp=" + timestamp,
+        "nonce=" + nonce
+    ).sorted().collect(Collectors.joining("&"));
+
+    // 2. 拼接密钥
+    String signStr = sortedParams + "&app_secret=" + appSecret;
+
+    // 3. MD5加密并转大写
+    return DigestUtils.md5Hex(signStr).toUpperCase();
+}
+```
+
+**验证逻辑（Java后端）**：
+
+```java
+@Component
+public class B2BApiAuthInterceptor implements HandlerInterceptor {
+
+    @Autowired
+    private ApiKeyService apiKeyService;
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // 1. 提取请求头
+        String appId = request.getHeader("X-App-Id");
+        String timestamp = request.getHeader("X-Timestamp");
+        String nonce = request.getHeader("X-Nonce");
+        String signature = request.getHeader("X-Signature");
+
+        // 2. 基础校验
+        if (StringUtils.isAnyBlank(appId, timestamp, nonce, signature)) {
+            throw new ApiException(401, "缺少认证参数");
+        }
+
+        // 3. 时间戳校验（防重放攻击，5分钟内有效）
+        Long requestTime = Long.parseLong(timestamp);
+        if (Math.abs(System.currentTimeMillis() / 1000 - requestTime) > 300) {
+            throw new ApiException(401, "请求已过期");
+        }
+
+        // 4. 查询AppSecret
+        ApiKey apiKey = apiKeyService.getByAppId(appId);
+        if (apiKey == null || apiKey.getStatus() != 1) {
+            throw new ApiException(401, "AppID无效或已禁用");
+        }
+
+        // 5. 验证签名
+        String expectedSignature = generateSignature(appId, requestTime, nonce, apiKey.getAppSecret());
+        if (!expectedSignature.equals(signature)) {
+            throw new ApiException(401, "签名验证失败");
+        }
+
+        // 6. 验证权限
+        String requestUri = request.getRequestURI();
+        if (!apiKey.hasPermission(requestUri)) {
+            throw new ApiException(403, "无权限访问该接口");
+        }
+
+        // 7. 限流检查
+        if (!apiKeyService.checkRateLimit(appId)) {
+            throw new ApiException(429, "请求频率过高");
+        }
+
+        // 8. 将ApiKey存入请求上下文，供后续业务使用
+        request.setAttribute("apiKey", apiKey);
+
+        return true;
+    }
+}
+```
+
+---
+
+#### 3.5.3 限流与安全控制
+
+**限流策略**：
+
+基于 `api_keys` 表中的限流配置，实现多维度限流：
+
+| 限流维度 | 配置字段 | 说明 | 默认值 |
+|---------|---------|------|--------|
+| **每秒限流** | `rate_limit_per_second` | 1秒内最多请求次数 | 100次/秒 |
+| **每分钟限流** | `rate_limit_per_minute` | 1分钟内最多请求次数 | 1000次/分钟 |
+| **每小时限流** | `rate_limit_per_hour` | 1小时内最多请求次数 | 10000次/小时 |
+
+**限流实现（Redis + Lua脚本）**：
+
+```java
+@Service
+public class RateLimitService {
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    /**
+     * 检查是否超过限流
+     */
+    public boolean checkRateLimit(String appId, int limitPerSecond) {
+        String key = "rate_limit:" + appId;
+
+        // Lua脚本保证原子性
+        String luaScript =
+            "local current = redis.call('GET', KEYS[1]) " +
+            "if current == false then " +
+            "    redis.call('SET', KEYS[1], 1) " +
+            "    redis.call('EXPIRE', KEYS[1], 1) " +
+            "    return 1 " +
+            "else " +
+            "    if tonumber(current) < tonumber(ARGV[1]) then " +
+            "        return redis.call('INCR', KEYS[1]) " +
+            "    else " +
+            "        return 0 " +
+            "    end " +
+            "end";
+
+        Long result = redisTemplate.execute(
+            RedisScript.of(luaScript, Long.class),
+            Collections.singletonList(key),
+            String.valueOf(limitPerSecond)
+        );
+
+        return result != null && result > 0;
+    }
+}
+```
+
+**IP白名单/黑名单**：
+
+基于 `api_keys` 表中的 `ip_whitelist` 和 `ip_blacklist` JSON字段：
+
+```java
+public class IpWhitelistInterceptor implements HandlerInterceptor {
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        ApiKey apiKey = (ApiKey) request.getAttribute("apiKey");
+        String clientIp = getClientIp(request);
+
+        // 1. 检查黑名单
+        List<String> ipBlacklist = apiKey.getIpBlacklist();
+        if (ipBlacklist != null && ipBlacklist.contains(clientIp)) {
+            throw new ApiException(403, "IP已被封禁");
+        }
+
+        // 2. 检查白名单（如果配置了白名单）
+        List<String> ipWhitelist = apiKey.getIpWhitelist();
+        if (ipWhitelist != null && !ipWhitelist.isEmpty() && !ipWhitelist.contains(clientIp)) {
+            throw new ApiException(403, "IP不在白名单中");
+        }
+
+        return true;
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (StringUtils.isNotBlank(xForwardedFor)) {
+            return xForwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+}
+```
+
+---
+
+#### 3.5.4 数据脱敏规则
+
+**脱敏原则**：
+
+根据 `api_keys` 表中的 `permissions` 字段，控制返回字段的粒度：
+
+| 权限级别 | 可查看字段 | 说明 |
+|---------|-----------|------|
+| **user:read** | user_id, nickname, avatar | 基础用户信息 |
+| **user:info** | user_id, nickname, avatar, gender, city | 扩展用户信息 |
+| **user:phone** | user_id, phone（脱敏） | 手机号（138****1234） |
+| **user:phone-full** | user_id, phone（明文） | 手机号明文（需要高级权限） |
+| **order:read** | order_id, amount（脱敏） | 订单金额（100.**元） |
+| **order:read-full** | order_id, amount（明文） | 订单金额明文 |
+
+**脱敏工具类**：
+
+```java
+public class DataMaskingUtils {
+
+    /**
+     * 手机号脱敏（138****1234）
+     */
+    public static String maskPhone(String phone) {
+        if (StringUtils.isBlank(phone) || phone.length() != 11) {
+            return phone;
+        }
+        return phone.substring(0, 3) + "****" + phone.substring(7);
+    }
+
+    /**
+     * 身份证号脱敏（430***********1234）
+     */
+    public static String maskIdCard(String idCard) {
+        if (StringUtils.isBlank(idCard) || idCard.length() != 18) {
+            return idCard;
+        }
+        return idCard.substring(0, 3) + "***********" + idCard.substring(14);
+    }
+
+    /**
+     * 银行卡号脱敏（6222***********1234）
+     */
+    public static String maskBankCard(String bankCard) {
+        if (StringUtils.isBlank(bankCard) || bankCard.length() < 10) {
+            return bankCard;
+        }
+        return bankCard.substring(0, 4) + "***********" + bankCard.substring(bankCard.length() - 4);
+    }
+
+    /**
+     * 金额脱敏（100.**元）
+     */
+    public static String maskAmount(BigDecimal amount) {
+        if (amount == null) {
+            return null;
+        }
+        return amount.setScale(0, RoundingMode.DOWN) + ".**元";
+    }
+}
+```
+
+**动态脱敏注解（基于权限）**：
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface DataMasking {
+    String permission() default "";
+    String[] fields() default {};
+}
+
+@Aspect
+@Component
+public class DataMaskingAspect {
+
+    @Around("@annotation(dataMasking)")
+    public Object maskData(ProceedingJoinPoint joinPoint, DataMasking dataMasking) throws Throwable {
+        // 1. 执行原方法
+        Object result = joinPoint.proceed();
+
+        // 2. 获取当前ApiKey的权限
+        ApiKey apiKey = SecurityContextHolder.getApiKey();
+        if (apiKey == null) {
+            return result;
+        }
+
+        // 3. 检查是否有查看明文数据的权限
+        if (apiKey.hasPermission(dataMasking.permission())) {
+            return result; // 有权限，不脱敏
+        }
+
+        // 4. 无权限，对指定字段进行脱敏
+        return maskFields(result, dataMasking.fields());
+    }
+}
+```
+
+---
+
+#### 3.5.5 核心API接口列表
+
+**API基础信息**：
+
+- **Base URL**: `https://api.dudanexus.com/b2b/v1`
+- **Content-Type**: `application/json`
+- **字符编码**: `UTF-8`
+- **请求方式**: 主要使用 `POST`（避免GET请求缓存和参数长度限制）
+
+**统一响应格式**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {},
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**错误码列表**：
+
+| 错误码 | 说明 | 处理建议 |
+|-------|------|---------|
+| 200 | 成功 | - |
+| 400 | 参数错误 | 检查请求参数 |
+| 401 | 认证失败 | 检查AppID、AppSecret、签名 |
+| 403 | 权限不足 | 联系平台管理员授权 |
+| 404 | 资源不存在 | 检查查询的ID是否存在 |
+| 429 | 请求频率过高 | 降低请求频率，联系平台调整限流 |
+| 500 | 服务器错误 | 联系平台技术支持 |
+
+---
+
+##### API 1：查询用户基础信息
+
+**接口说明**：根据平台UnionID或手机号查询用户基础信息
+
+**请求地址**：`POST /api/b2b/v1/user/info`
+
+**请求参数**：
+
+```json
+{
+  "query_type": "unionid",
+  "query_value": "UNI2026032212345678"
+}
+```
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| query_type | String | 是 | 查询类型：unionid-phone-email |
+| query_value | String | 是 | 查询值 |
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "platform_unionid": "UNI2026032212345678",
+    "phone": "138****1234",
+    "email": "u***@example.com",
+    "nickname": "张三",
+    "avatar": "https://cdn.dudanexus.com/avatar/1001.jpg",
+    "gender": 1,
+    "status": 1,
+    "register_time": "2026-03-20 10:30:00",
+    "last_login_time": "2026-03-22 15:20:00"
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`user:read`
+
+---
+
+##### API 2：批量查询用户信息
+
+**接口说明**：根据平台UnionID列表批量查询用户信息（最多100个）
+
+**请求地址**：`POST /api/b2b/v1/user/batch`
+
+**请求参数**：
+
+```json
+{
+  "unionids": [
+    "UNI2026032212345678",
+    "UNI2026032212345679",
+    "UNI2026032212345680"
+  ]
+}
+```
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "total": 3,
+    "users": [
+      {
+        "platform_unionid": "UNI2026032212345678",
+        "nickname": "张三",
+        "phone": "138****1234"
+      },
+      {
+        "platform_unionid": "UNI2026032212345679",
+        "nickname": "李四",
+        "phone": "139****5678"
+      },
+      {
+        "platform_unionid": "UNI2026032212345680",
+        "nickname": "王五",
+        "phone": "137****9012"
+      }
+    ]
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`user:read`
+
+---
+
+##### API 3：查询用户订单列表
+
+**接口说明**：查询指定用户的订单列表
+
+**请求地址**：`POST /api/b2b/v1/order/list`
+
+**请求参数**：
+
+```json
+{
+  "unionid": "UNI2026032212345678",
+  "order_status": "paid",
+  "start_time": "2026-03-01 00:00:00",
+  "end_time": "2026-03-22 23:59:59",
+  "page": 1,
+  "page_size": 20
+}
+```
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| unionid | String | 是 | 平台UnionID |
+| order_status | String | 否 | 订单状态：pending-paid-shipped-completed-refunded |
+| start_time | String | 否 | 开始时间 |
+| end_time | String | 否 | 结束时间 |
+| page | Integer | 是 | 页码（从1开始） |
+| page_size | Integer | 是 | 每页数量（最大100） |
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "total": 50,
+    "page": 1,
+    "page_size": 20,
+    "orders": [
+      {
+        "order_id": "2026032212345678",
+        "merchant_id": 1001,
+        "merchant_name": "测试商户A",
+        "order_amount": "100.**元",
+        "pay_amount": "90.**元",
+        "order_status": "paid",
+        "order_time": "2026-03-22 10:30:00",
+        "pay_time": "2026-03-22 10:31:00"
+      }
+    ]
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`order:read`
+
+---
+
+##### API 4：查询订单详情
+
+**接口说明**：查询单个订单的详细信息
+
+**请求地址**：`POST /api/b2b/v1/order/detail`
+
+**请求参数**：
+
+```json
+{
+  "order_id": "2026032212345678"
+}
+```
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "order_id": "2026032212345678",
+    "merchant_id": 1001,
+    "merchant_name": "测试商户A",
+    "merchant_user_id": "M1001_001",
+    "platform_unionid": "UNI2026032212345678",
+    "order_amount": "100.00",
+    "discount_amount": "10.00",
+    "pay_amount": "90.00",
+    "order_status": "paid",
+    "pay_status": "success",
+    "pay_method": "wechat_pay",
+    "transaction_id": "4200001234567890",
+    "order_time": "2026-03-22 10:30:00",
+    "pay_time": "2026-03-22 10:31:00",
+    "goods": [
+      {
+        "goods_id": 1001,
+        "goods_name": "测试商品",
+        "quantity": 2,
+        "unit_price": "50.00",
+        "total_price": "100.00"
+      }
+    ]
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`order:read-full`
+
+---
+
+##### API 5：查询支付信息
+
+**接口说明**：查询指定订单的支付详细信息
+
+**请求地址**：`POST /api/b2b/v1/payment/detail`
+
+**请求参数**：
+
+```json
+{
+  "order_id": "2026032212345678"
+}
+```
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "order_id": "2026032212345678",
+    "payment_id": "PAY_2026032212345678",
+    "merchant_id": 1001,
+    "wechat_pay_mch_id": "1234567890",
+    "transaction_id": "4200001234567890",
+    "pay_amount": "90.00",
+    "profit_sharing_amount": "9.00",
+    "platform_share_amount": "9.00",
+    "merchant_share_amount": "81.00",
+    "pay_status": "success",
+    "pay_time": "2026-03-22 10:31:00",
+    "profit_sharing_status": "completed"
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`payment:read`
+
+---
+
+##### API 6：查询商户信息
+
+**接口说明**：查询商户的基础信息
+
+**请求地址**：`POST /api/b2b/v1/merchant/info`
+
+**请求参数**：
+
+```json
+{
+  "merchant_id": 1001
+}
+```
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "merchant_id": 1001,
+    "merchant_code": "M001",
+    "merchant_name": "测试商户A",
+    "merchant_type": "mini_program",
+    "contact_person": "张三",
+    "contact_phone": "139****0001",
+    "company_name": "测试公司A",
+    "license_no": "91110000**********",
+    "province": "北京市",
+    "city": "北京市",
+    "mini_app_name": "测试小程序A",
+    "mini_app_appid": "wxaaaa1111aaaa1111",
+    "status": "active",
+    "audit_status": "approved"
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`merchant:read`
+
+---
+
+##### API 7：查询小程序信息
+
+**接口说明**：查询小程序的详细信息
+
+**请求地址**：`POST /api/b2b/v1/mini_program/info`
+
+**请求参数**：
+
+```json
+{
+  "mini_program_id": 2001
+}
+```
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "mini_program_id": 2001,
+    "mini_program_code": "MP001",
+    "mini_program_name": "测试小程序A",
+    "mini_app_appid": "wxaaaa1111aaaa1111",
+    "merchant_id": 1001,
+    "merchant_name": "测试商户A",
+    "mini_program_type": "ecommerce",
+    "template_id": 1001,
+    "template_name": "电商模板",
+    "development_status": "completed",
+    "online_status": "online",
+    "release_time": "2026-03-20 10:00:00"
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`mini_program:read`
+
+---
+
+##### API 8：查询商户用户列表
+
+**接口说明**：查询指定商户下的用户列表
+
+**请求地址**：`POST /api/b2b/v1/merchant_user/list`
+
+**请求参数**：
+
+```json
+{
+  "merchant_id": 1001,
+  "user_level": "vip",
+  "start_bind_time": "2026-03-01 00:00:00",
+  "end_bind_time": "2026-03-22 23:59:59",
+  "page": 1,
+  "page_size": 20
+}
+```
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "total": 100,
+    "page": 1,
+    "page_size": 20,
+    "users": [
+      {
+        "merchant_user_id": "M1001_001",
+        "platform_unionid": "UNI2026032212345678",
+        "mini_app_openid": "oAAAAA_xxxxxxxxxxxxxx",
+        "mini_app_unionid": "oUUUUU_1234567890",
+        "nickname": "张三",
+        "avatar": "https://cdn.dudanexus.com/avatar/001.jpg",
+        "user_level": "vip",
+        "status": 1,
+        "bind_time": "2026-03-20 10:30:00",
+        "visit_count": 50,
+        "last_visit_time": "2026-03-22 15:20:00"
+      }
+    ]
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`merchant_user:read`
+
+---
+
+##### API 9：检查手机号是否已注册
+
+**接口说明**：用于PHP后端在用户注册前，检查手机号是否已在Java后端注册
+
+**请求地址**：`POST /api/b2b/v1/auth/check-phone`
+
+**请求参数**：
+
+```json
+{
+  "phone": "13900139001"
+}
+```
+
+**响应示例（已注册）**：
+
+```json
+{
+  "code": 200,
+  "message": "手机号已注册",
+  "data": {
+    "exists": true,
+    "phone": "13900139001",
+    "platform_unionid": "UNI2026032212345678",
+    "register_time": "2026-03-20 10:30:00",
+    "bound_systems": ["java", "php"]
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**响应示例（未注册）**：
+
+```json
+{
+  "code": 200,
+  "message": "手机号未注册",
+  "data": {
+    "exists": false,
+    "phone": "13900139001"
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`auth:check-phone`
+
+---
+
+##### API 10：绑定后端账户
+
+**接口说明**：用于PHP后端用户登录后，绑定到Java后端的平台UnionID
+
+**请求地址**：`POST /api/b2b/v1/auth/bind-account`
+
+**请求参数**：
+
+```json
+{
+  "phone": "13900139001",
+  "backend_system": "php",
+  "backend_user_id": 10001,
+  "backend_user_shard": 0
+}
+```
+
+**响应示例**：
+
+```json
+{
+  "code": 200,
+  "message": "绑定成功",
+  "data": {
+    "platform_unionid": "UNI2026032212345678",
+    "backend_system": "php",
+    "backend_user_id": 10001,
+    "bound_systems": ["java", "php"],
+    "bind_time": "2026-03-22 16:00:00"
+  },
+  "timestamp": 1679000000,
+  "request_id": "req_2026032212345678"
+}
+```
+
+**所需权限**：`auth:bind-account`
+
+---
+
+#### 3.5.6 PHP后端调用示例
+
+**完整示例1：用户登录场景**
+
+```php
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+class DudaNexusApiClient
+{
+    protected $baseUrl = 'https://api.dudanexus.com/b2b/v1';
+    protected $appId;
+    protected $appSecret;
+
+    public function __construct()
+    {
+        $this->appId = config('dudanexus.app_id');
+        $this->appSecret = config('dudanexus.app_secret');
+    }
+
+    /**
+     * 生成签名
+     */
+    private function generateSignature($timestamp, $nonce)
+    {
+        $params = [
+            'app_id=' . $this->appId,
+            'nonce=' . $nonce,
+            'timestamp=' . $timestamp,
+        ];
+        sort($params);
+        $signStr = implode('&', $params) . '&app_secret=' . $this->appSecret;
+        return strtoupper(md5($signStr));
+    }
+
+    /**
+     * 发起API请求
+     */
+    private function request($url, $data = [])
+    {
+        $timestamp = time();
+        $nonce = Str::random(8);
+        $signature = $this->generateSignature($timestamp, $nonce);
+
+        $response = Http::withHeaders([
+            'X-App-Id' => $this->appId,
+            'X-Timestamp' => $timestamp,
+            'X-Nonce' => $nonce,
+            'X-Signature' => $signature,
+        ])->post($this->baseUrl . $url, $data);
+
+        $result = $response->json();
+
+        if ($result['code'] !== 200) {
+            Log::error('DudaNexus API调用失败', [
+                'url' => $url,
+                'response' => $result,
+            ]);
+            throw new \Exception($result['message']);
+        }
+
+        return $result['data'];
+    }
+
+    /**
+     * 用户登录流程
+     */
+    public function userLogin($phone)
+    {
+        // Step 1: 检查手机号是否已在Java后端注册
+        $checkResult = $this->checkPhone($phone);
+
+        if ($checkResult['exists']) {
+            // Step 2a: 手机号已注册，获取UnionID
+            $platformUnionid = $checkResult['platform_unionid'];
+
+            // Step 3a: 查询用户信息
+            $userInfo = $this->getUserInfo('unionid', $platformUnionid);
+
+            // Step 4a: 绑定PHP后端用户ID（如果还没绑定）
+            $this->bindAccount($phone, $platformUnionid);
+
+            return [
+                'exists' => true,
+                'user_info' => $userInfo,
+            ];
+        } else {
+            // Step 2b: 手机号未注册，创建新用户并分配UnionID
+            $platformUnionid = $this->allocateUnionid($phone);
+
+            return [
+                'exists' => false,
+                'platform_unionid' => $platformUnionid,
+            ];
+        }
+    }
+
+    /**
+     * 检查手机号是否已注册
+     */
+    public function checkPhone($phone)
+    {
+        return $this->request('/auth/check-phone', [
+            'phone' => $phone,
+        ]);
+    }
+
+    /**
+     * 获取用户信息
+     */
+    public function getUserInfo($queryType, $queryValue)
+    {
+        return $this->request('/user/info', [
+            'query_type' => $queryType,
+            'query_value' => $queryValue,
+        ]);
+    }
+
+    /**
+     * 绑定账户
+     */
+    public function bindAccount($phone, $platformUnionid)
+    {
+        $phpUserId = auth()->user()->id;
+
+        return $this->request('/auth/bind-account', [
+            'phone' => $phone,
+            'backend_system' => 'php',
+            'backend_user_id' => $phpUserId,
+            'backend_user_shard' => 0,
+        ]);
+    }
+
+    /**
+     * 查询用户订单列表
+     */
+    public function getUserOrders($platformUnionid, $page = 1, $pageSize = 20)
+    {
+        return $this->request('/order/list', [
+            'unionid' => $platformUnionid,
+            'page' => $page,
+            'page_size' => $pageSize,
+        ]);
+    }
+
+    /**
+     * 查询订单详情
+     */
+    public function getOrderDetail($orderId)
+    {
+        return $this->request('/order/detail', [
+            'order_id' => $orderId,
+        ]);
+    }
+}
+```
+
+**Laravel控制器中使用**：
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Services\DudaNexusApiClient;
+use Illuminate\Http\Request;
+
+class UserController extends Controller
+{
+    protected $apiClient;
+
+    public function __construct(DudaNexusApiClient $apiClient)
+    {
+        $this->apiClient = $apiClient;
+    }
+
+    /**
+     * 用户登录
+     */
+    public function login(Request $request)
+    {
+        $phone = $request->input('phone');
+
+        try {
+            // 调用Java后端API
+            $result = $this->apiClient->userLogin($phone);
+
+            if ($result['exists']) {
+                // 用户已存在，直接登录
+                $userInfo = $result['user_info'];
+                // ... 本地登录逻辑
+            } else {
+                // 新用户，创建本地账户
+                $platformUnionid = $result['platform_unionid'];
+                // ... 创建本地用户逻辑
+            }
+
+            return response()->json([
+                'code' => 200,
+                'message' => '登录成功',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => '登录失败：' . $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * 查看我的订单
+     */
+    public function myOrders(Request $request)
+    {
+        $page = $request->input('page', 1);
+        $platformUnionid = auth()->user()->platform_unionid;
+
+        try {
+            $orders = $this->apiClient->getUserOrders($platformUnionid, $page);
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'success',
+                'data' => $orders,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => '查询失败：' . $e->getMessage(),
+            ]);
+        }
+    }
+}
+```
+
+**完整示例2：查询订单场景**
+
+```php
+<?php
+
+namespace App\Jobs;
+
+use App\Services\DudaNexusApiClient;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+
+class SyncUserOrdersFromJava implements ShouldQueue
+{
+    use InteractsWithQueue, Queueable, SerializesModels;
+
+    protected $platformUnionid;
+
+    public function __construct($platformUnionid)
+    {
+        $this->platformUnionid = $platformUnionid;
+    }
+
+    public function handle(DudaNexusApiClient $apiClient)
+    {
+        $page = 1;
+        $pageSize = 100;
+        $hasMore = true;
+
+        while ($hasMore) {
+            // 调用Java后端API
+            $result = $apiClient->getUserOrders($this->platformUnionid, $page, $pageSize);
+
+            // 批量同步到本地数据库
+            foreach ($result['orders'] as $order) {
+                \App\Models\Order::updateOrCreate(
+                    ['order_id' => $order['order_id']],
+                    [
+                        'merchant_id' => $order['merchant_id'],
+                        'order_amount' => $order['order_amount'],
+                        'pay_amount' => $order['pay_amount'],
+                        'order_status' => $order['order_status'],
+                        'order_time' => $order['order_time'],
+                    ]
+                );
+            }
+
+            // 判断是否还有更多数据
+            $total = $result['total'];
+            $hasMore = $page * $pageSize < $total;
+            $page++;
+        }
+    }
+}
+```
+
+---
+
+## 🔄 四、核心业务流程设计
+
+### 4.1 微信小程序代开发流程
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              小程序代开发完整流程                          │
+└─────────────────────────────────────────────────────────┘
+
+步骤1: 客户发起代开发申请
+    ↓
+    ├─ 填写企业信息
+    │  ├─ 企业名称
+    │  ├─ 统一社会信用代码（18位）/ 组织机构代码（9位）/ 营业执照（15位）
+    │  ├─ 法人姓名 + 法人微信号（需绑定银行卡）
+    │  └─ 第三方联系电话
+    ↓
+步骤2: 调用微信"代商家快速注册企业小程序"接口
+    ↓
+    ├─ 返回: 小程序AppID
+    ├─ 返回: 第三方授权码（auth_code）
+    └─ 写入 mini_program_development_tasks 表
+    ↓
+步骤3: 设置小程序名称
+    ↓
+    ├─ 客户提交小程序名称
+    ├─ 调用微信接口进行名称检测
+    ├─ 名称审核状态:
+    │  ├─ 名称格式不合法
+    │  ├─ 名称已被占用
+    │  ├─ 需要与公众号/小程序同主体
+    │  └─ 命中微信号
+    └─ 名称审核通过后提交审核
+    ↓
+步骤4: 小程序微信认证（可选）
+    ↓
+    ├─ 上传主体资质材料（营业执照等）
+    ├─ 填写小程序管理员信息
+    ├─ 提交认证订单
+    ├─ 选择支付方式:
+    │  ├─ 服务商代缴（需要服务市场appid）
+    │  └─ 商户支付（返回支付二维码）
+    ├─ 认证审核流程:
+    │  ├─ 待支付 → 审核中 → 打回重填 / 认证通过
+    │  └─ 状态码: 0→15→2→3/4
+    └─ 认证完成后有效期1年
+    ↓
+步骤5: 小程序备案（2023年9月起强制要求）
+    ↓
+    ├─ 上传备案材料:
+    │  ├─ 主体证件照片
+    │  ├─ 主体负责人证件
+    │  ├─ 法人信息（如果主体负责人不是法人）
+    │  ├─ 小程序负责人证件
+    │  ├─ 授权书（如果需要）
+    │  └─ 其他材料（承诺书、建设方案书等）
+    ├─ 选择服务内容类型（最多5个二级类目）
+    ├─ 填写小程序实际经营内容描述（20-200字）
+    ├─ 发起人脸核身:
+    │  ├─ 调用微信人脸核身接口
+    │  ├─ 获取 face_id_task_id
+    │  ├─ task_id有效期:
+    │  │  ├─ 认证+备案二合一: 1天
+    │  │  └─ 仅备案: 3天
+    │  └─ 24小时内完成核验
+    ├─ 提交备案申请
+    ├─ 备案审核流程:
+    │  ├─ 平台审核中 (2)
+    │  ├─ 平台审核驳回 (3) ← 可修改后重新提交
+    │  ├─ 管局审核中 (4) ← 需要短信核验
+    │  ├─ 管局审核驳回 (5)
+    │  └─ 已备案 (6)
+    └─ 管局短信核验（只有管局审核中才需要）
+    ↓
+步骤6: 功能开发
+    ↓
+    ├─ 选择模板（如果是模板模式）
+    ├─ 定制开发（如果是定制模式）
+    ├─ 前端开发
+    ├─ 后端开发
+    └─ 测试验收
+    ↓
+步骤7: 配置服务器域名
+    ↓
+    ├─ request合法域名
+    ├─ socket合法域名
+    ├─ uploadFile合法域名
+    └─ downloadFile合法域名
+    ↓
+步骤8: 提交审核
+    ↓
+    ├─ 上传小程序代码
+    ├─ 填写测试账号
+    ├─ 提交微信审核
+    └─ 审核通过后上线
+    ↓
+步骤9: 开通微信支付（可选）
+    ↓
+    ├─ 提交支付申请
+    ├─ 关联特约商户
+    ├─ 配置分账规则
+    └─ 支付开通
+```
+
+### 4.2 用户微信登录流程
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              用户微信登录授权流程                          │
+└─────────────────────────────────────────────────────────┘
+
+场景1: 小程序用户首次登录
+    ↓
+    ├─ 用户打开小程序
+    ├─ 小程序前端调用 wx.login() 获取 code
+    ├─ 前端将 code 发送给后端
+    ├─ 后端通过 code 调用微信接口:
+    │  POST https://api.weixin.qq.com/sns/jscode2session
+    │  ?appid=小程序AppID
+    │  &secret=小程序AppSecret
+    │  &js_code=code
+    │  &grant_type=authorization_code
+    ↓
+    ├─ 微信返回:
+    │  {
+    │    "openid": "oAAAAA_xxxxx",           ← 用户在该小程序的OpenID
+    │    "session_key": "xxxxx",             ← 会话密钥
+    │    "unionid": "oUUUUU_12345",          ← 如果绑定开放平台，返回UnionID
+    │    "errcode": 0
+    │  }
+    ↓
+    ├─ 后端处理逻辑:
+    │  1. 检查 merchant_users 表是否存在该记录
+    │     WHERE merchant_id = ? AND mini_app_openid = ?
+    │  2. 如果不存在，创建新记录:
+    │     ├─ 生成 platform_user_id（新用户）
+    │     ├─ 生成 merchant_user_id（如：M1001_001）
+    │     ├─ 保存 openid, unionid, session_key
+    │     ├─ 获取用户信息（昵称、头像）
+    │     └─ 写入 merchant_users 表
+    │  3. 如果存在，更新:
+    │     ├─ 更新 session_key
+    │     ├─ 更新最后访问时间
+    │     └─ 更新访问次数
+    ↓
+    ├─ 后端返回自定义登录态（JWT Token）
+    │  {
+    │    "code": 200,
+    │    "message": "登录成功",
+    │    "data": {
+    │      "token": "eyJhbGciOiJIUzI1NiIs...",
+    │      "merchant_user_id": "M1001_001",
+    │      "platform_user_id": 1234567890,
+    │      "merchant_id": 1001,
+    │      "nickname": "张三",
+    │      "avatar": "https://..."
+    │    }
+    │  }
+    └─ 后续请求前端携带 token 进行身份验证
+
+
+场景2: 已有用户切换小程序（多租户场景）
+    ↓
+    ├─ 用户张三在小程序A的 merchant_user_id: M1001_001
+    ├─ 用户张三打开小程序B
+    ├─ 小程序B前端调用 wx.login() 获取 code
+    ├─ 后端通过 code 获取 openid 和 unionid
+    ↓
+    ├─ 后端处理逻辑:
+    │  1. 通过 unionid 查找是否已有平台用户:
+    │     SELECT * FROM users_XX WHERE wechat_unionid = 'oUUUUU_12345'
+    │  2. 如果找到 platform_user_id = 1234567890
+    │  3. 检查小程序B是否已有该用户:
+    │     SELECT * FROM merchant_users
+    │     WHERE merchant_id = 1002 AND platform_user_id = 1234567890
+    │  4. 如果不存在，创建新记录:
+    │     ├─ platform_user_id: 1234567890（相同，同一平台用户）
+    │     ├─ merchant_user_id: M1002_001（不同，不同小程序）
+    │     ├─ mini_app_openid: oBBBBB_yyyyy（不同，不同小程序）
+    │     └─ mini_app_unionid: oUUUUU_12345（相同，同一UnionID）
+    ↓
+    └─ 关键价值: 通过 UnionID 识别同一用户，但通过 merchant_user_id 隔离不同小程序的数据
+```
+
+### 4.3 支付分账流程
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  特约商户分账流程                          │
+└─────────────────────────────────────────────────────────┘
+
+用户下单支付
+    ↓
+    ├─ 用户在小程序内下单
+    ├─ 订单金额: 100元
+    ├─ 调用微信支付统一下单接口
+    ↓
+用户完成支付
+    ↓
+    ├─ 微信支付成功回调
+    ├─ 写入 payment_orders 表
+    ├─ payment_status = 'paid'
+    ↓
+触发分账
+    ↓
+    ├─ 查询分账规则:
+    │  SELECT profit_sharing_rate FROM merchants WHERE id = 1001
+    │  返回: 0.10（10%）
+    ├─ 计算分账金额:
+    │  ├─ 平台分账: 100元 × 10% = 10元
+    │  └─ 商户分账: 100元 × 90% = 90元
+    ↓
+    调用微信分账接口
+    ↓
+    POST https://api.mch.weixin.qq.com/secapi/pay/profitsharing
+    {
+      "transaction_id": "微信支付交易号",
+      "out_order_no": "平台分账单号",
+      "receivers": [
+        {
+          "type": "MERCHANT_ID",           ← 接收方类型
+          "account": "平台商户号",           ← 接收方账号
+          "amount": 1000,                   ← 分账金额（分）
+          "description": "平台服务费"
+        }
+      ]
+    }
+    ↓
+    微信分账成功回调
+    ↓
+    ├─ 更新 payment_orders 表
+    │  ├─ profit_sharing_status = 'completed'
+    │  └─ profit_sharing_time = NOW()
+    ├─ 写入 profit_sharing_records 表
+    └─ 发送通知给商户和平台
+```
+
+---
+
+## 📐 五、数据库扩展性设计
+
+### 5.1 JSON字段应用
+
+为了增强扩展性，以下字段使用JSON格式存储：
+
+```sql
+-- users_XX 表
+`wechat_openid_list` JSON COMMENT '多OpenID存储'
+
+-- companies 表
+`ext_config` JSON COMMENT '扩展配置'
+
+-- mini_programs 表
+`service_content_types` JSON COMMENT '服务内容类型列表'
+`category_qualifications` JSON COMMENT '类目资质文件'
+
+-- mini_program_development_tasks 表
+`fee_breakdown` JSON COMMENT '费用明细'
+
+-- payment_orders 表
+`profit_sharing_rules` JSON COMMENT '分账规则'
+```
+
+### 5.2 分表分库策略
+
+#### 用户表分片（水平分片）
+
+```sql
+-- 分片规则: user_shard = user_id % 100
+-- 表名: users_00, users_01, ..., users_99
+
+-- 示例查询
+-- 1. 根据user_id查询
+SELECT * FROM users_15 WHERE id = 1234567890;
+
+-- 2. 根据phone查询（需要查询所有分片）
+SELECT * FROM users_00 WHERE phone = '13900139000'
+UNION ALL
+SELECT * FROM users_01 WHERE phone = '13900139000'
+...
+UNION ALL
+SELECT * FROM users_99 WHERE phone = '13900139000';
+
+-- 优化：建立 phone → user_shard 的映射表
+CREATE TABLE `phone_shard_mapping` (
+  `phone` VARCHAR(20) PRIMARY KEY,
+  `user_shard` TINYINT NOT NULL,
+  `user_id` BIGINT NOT NULL,
+  KEY `idx_user_shard` (`user_shard`)
+);
+```
+
+#### 订单表分片（按时间分片）
+
+```sql
+-- 按月分片
+-- 表名: payment_orders_202601, payment_orders_202602, ...
+
+-- 示例查询
+SELECT * FROM payment_orders_202603
+WHERE order_time >= '2026-03-01' AND order_time < '2026-04-01';
+```
+
+### 5.3 冷热数据分离
+
+```sql
+-- 热数据表（频繁访问）
+-- users_XX (近6个月活跃用户)
+-- payment_orders_YYYYMM (近3个月订单)
+-- merchant_users (活跃用户)
+
+-- 冷数据表（归档存储）
+-- users_archive (超过6个月未活跃)
+-- payment_orders_archive (超过3个月订单)
+-- api_call_logs_archive (超过6个月日志)
+
+-- 定期归档任务（Cron Job）
+-- 每周日凌晨2点执行归档
+```
+
+---
+
+## 🔒 六、数据安全与加密
+
+### 6.1 敏感字段加密
+
+```sql
+-- 1. 微信敏感信息加密
+wechat_appsecret VARCHAR(500)  -- AES-256加密
+wechat_access_token VARCHAR(500) -- AES-256加密
+wechat_refresh_token VARCHAR(500) -- AES-256加密
+mini_app_session_key VARCHAR(500) -- AES-256加密
+
+-- 2. 支付敏感信息加密
+wechat_pay_api_key VARCHAR(500) -- AES-256加密
+wechat_pay_key VARCHAR(500) -- AES-256加密
+alipay_private_key TEXT -- AES-256加密
+alipay_public_key TEXT -- AES-256加密
+
+-- 3. 用户敏感信息加密
+password VARCHAR(255) -- BCrypt加密
+phone VARCHAR(20) -- 可选AES加密（根据业务需求）
+id_card VARCHAR(18) -- AES-256加密（如果存储）
+```
+
+### 6.2 数据脱敏
+
+```sql
+-- 日志表中敏感信息脱敏
+CREATE TABLE `api_call_logs` (
+  ...
+  `request_params` TEXT COMMENT '请求参数（敏感信息已脱敏）',
+  `request_headers` TEXT COMMENT '请求头（敏感信息已脱敏）',
+  ...
+);
+
+-- 脱敏规则
+-- AppID/Secret: wx****8888 / ******
+-- 手机号: 139****0000
+-- 身份证: 18*************01
+-- 银行卡: 6222***********1234
+```
+
+---
+
+## 📈 七、性能优化建议
+
+### 7.1 索引优化
+
+```sql
+-- 1. 组合索引
+CREATE INDEX idx_user_type_status ON users_XX(user_type, status);
+CREATE INDEX idx_merchant_user_status ON merchant_users(merchant_id, status);
+CREATE INDEX idx_order_payment_status ON payment_orders(payment_status, profit_sharing_status);
+
+-- 2. 覆盖索引
+CREATE INDEX idx_merchant_user_cover ON merchant_users(merchant_id, merchant_user_id, nickname, avatar);
+
+-- 3. 前缀索引
+CREATE INDEX idx_object_key ON object_metadata(object_key(255));
+```
+
+### 7.2 读写分离
+
+```sql
+-- 主库（Master）: 写操作
+INSERT INTO users_00 (...) VALUES (...);
+UPDATE users_00 SET ... WHERE ...;
+DELETE FROM users_00 WHERE ...;
+
+-- 从库（Slave）: 读操作
+SELECT * FROM users_00 WHERE id = ?;
+SELECT * FROM merchant_users WHERE merchant_id = ?;
+
+-- 报表统计: 专用从库
+SELECT COUNT(*) FROM payment_orders WHERE ...;
+```
+
+### 7.3 缓存策略
+
+```sql
+-- 1. Redis缓存热数据
+-- 用户信息缓存（1小时）
+Key: user:info:{user_id}
+Value: {JSON对象}
+TTL: 3600秒
+
+-- 小程序配置缓存（24小时）
+Key: miniprogram:config:{mini_program_id}
+Value: {JSON对象}
+TTL: 86400秒
+
+-- 商户信息缓存（12小时）
+Key: merchant:info:{merchant_id}
+Value: {JSON对象}
+TTL: 43200秒
+
+-- 2. 本地缓存（本地内存）
+-- 系统配置、字典数据等
+```
+
+---
+
+## 🎯 八、总结与建议
+
+### 8.1 核心设计要点
+
+1. **微信ID体系管理**
+   - 区分 AppID、OpenID、UnionID 的使用场景
+   - 通过 UnionID 实现跨应用用户身份统一
+   - 使用 JSON 字段存储多 OpenID 映射关系
+
+2. **多租户数据隔离**
+   - `merchant_users` 表实现用户在不同商户的虚拟ID隔离
+   - `platform_user_id` 全局唯一，`merchant_user_id` 商户内唯一
+
+3. **分片分库策略**
+   - 用户表按 ID 取模分片（100张表）
+   - 订单表按时间分片（按月归档）
+   - 冷热数据分离存储
+
+4. **业务流程设计**
+   - 小程序代开发：9个步骤，对应微信代开发接口
+   - 用户登录：OAuth2.0 + UnionID 识别
+   - 支付分账：特约商户模式，支持平台抽成
+
+### 8.2 后续工作建议
+
+1. **数据库脚本生成**
+   - 根据本文档生成完整的建表SQL脚本
+   - 编写初始化数据脚本
+   - 编写索引创建脚本
+
+2. **API接口设计**
+   - 小程序代开发相关接口
+   - 用户登录授权接口
+   - 支付分账接口
+
+3. **管理后台开发**
+   - 小程序管理模块
+   - 用户管理模块
+   - 订单管理模块
+   - 数据统计模块
+
+4. **监控告警系统**
+   - API调用频率监控
+   - 支付分账状态监控
+   - 小程序认证/备案进度监控
+
+---
+
+## 📚 附录
+
+### A. 相关文档
+
+- 微信开放平台文档: https://open.weixin.qq.com/
+- 微信小程序开发文档: https://developers.weixin.qq.com/miniprogram/dev/framework/
+- 微信支付文档: https://pay.weixin.qq.com/wiki/doc/api/index.html
+- 微信小程序代开发文档: https://developers.weixin.qq.com/doc/oplatform/Third-party_Platforms/2.0/api/account/create.html
+
+### B. 数据库字段命名规范
+
+- 主键: `id`
+- 外键: `{关联表}_id` (如 `user_id`, `company_id`)
+- 状态字段: `status`
+- 时间字段: `{操作}_time` (如 `create_time`, `update_time`)
+- 金额字段: 使用 `DECIMAL(10,2)`，单位为元
+- 布尔字段: 使用 `TINYINT`，0-否 1-是
+
+### C. 修改记录
+
+| 版本 | 日期 | 修改内容 | 修改人 |
+|------|------|---------|--------|
+| v1.0 | 2026-03-22 | 初始版本，完成整体设计 | DudaNexus架构组 |
+
+---
+
+**文档结束**

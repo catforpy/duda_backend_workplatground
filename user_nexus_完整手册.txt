@@ -1,0 +1,536 @@
+# duda_nexus 数据库完整手册
+
+生成时间：2026-03-17
+数据库版本：MySQL 8.0.27
+字符集：utf8mb4
+排序规则：utf8mb4_unicode_ci
+总表数：108张（8张主表 + 100张分表）
+总字段数：2123个
+
+---
+
+## 数据库概述
+
+duda_nexus（用户中心数据库）是一个完整的用户管理系统，支持用户分片存储，提供用户账户、地址、公司、角色、第三方登录、API密钥管理等核心功能。
+
+### 主要功能模块
+- 用户管理（user_accounts, user_profiles）
+- 分片用户表（users_00 到 users_99，按user_id%100分片）
+- 地址管理（user_addresses）
+- 登录认证（user_auth_logs, user_login_history）
+- 企业管理（user_companies）
+- 角色权限（user_roles）
+- 第三方登录（user_third_parties）
+- API密钥管理（user_api_keys）🔥 新增
+
+### 分片策略
+- 分片字段：user_id
+- 分片算法：user_id % 100
+- 分片数量：100张表（users_00 ~ users_99）
+
+---
+
+## 主表结构详情
+
+### 1. user_accounts - 用户账户表
+
+**表说明**：存储用户的所有登录账户信息（手机、邮箱等）
+
+**字段列表**：
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 账户ID，自增 |
+| user_id | bigint | NO | - | MUL | 用户ID（关联users_表） |
+| user_shard | tinyint | NO | - | MUL | 用户分片ID（0-99） |
+| login_type | varchar(20) | NO | - | MUL | 登录类型：phone/email/username |
+| login_account | varchar(100) | NO | - | MUL | 登录账号 |
+| password | varchar(255) | YES | - | - | 密码hash |
+| verified | tinyint | YES | 0 | - | 是否验证：0-未验证 1-已验证 |
+| is_primary | tinyint | YES | 0 | - | 是否主账户：0-否 1-是 |
+| status | varchar(20) | YES | active | MUL | 账户状态：active/frozen/deleted |
+| last_login_time | datetime | YES | - | - | 最后登录时间 |
+| last_login_ip | varchar(50) | YES | - | - | 最后登录IP |
+| create_time | datetime | YES | CURRENT_TIMESTAMP | - | 创建时间 |
+| update_time | datetime | YES | CURRENT_TIMESTAMP | - | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_id (user_id)
+- INDEX idx_user_shard (user_shard)
+- INDEX idx_login_type (login_type)
+- INDEX idx_login_account (login_account)
+- INDEX idx_status (status)
+
+---
+
+### 2. user_addresses - 用户地址表
+
+**表说明**：管理用户的收货地址、发票地址等
+
+**字段列表**：
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 地址ID，自增 |
+| user_id | bigint | NO | - | MUL | 用户ID |
+| contact_name | varchar(50) | YES | - | - | 联系人姓名 |
+| contact_phone | varchar(20) | YES | - | - | 联系电话 |
+| province | varchar(50) | YES | - | - | 省份 |
+| province_code | varchar(20) | YES | - | - | 省份编码 |
+| city | varchar(50) | YES | - | - | 城市 |
+| city_code | varchar(20) | YES | - | - | 城市编码 |
+| district | varchar(50) | YES | - | - | 区县 |
+| district_code | varchar(20) | YES | - | - | 区县编码 |
+| detail_address | varchar(200) | YES | - | - | 详细地址 |
+| postal_code | varchar(10) | YES | - | - | 邮政编码 |
+| tag | varchar(20) | YES | - | - | 地址标签：home-家，company-公司，school-学校 |
+| is_default | tinyint | YES | 0 | MUL | 是否默认地址：1-是，0-否 |
+| create_time | datetime | YES | CURRENT_TIMESTAMP | - | 创建时间 |
+| update_time | datetime | YES | CURRENT_TIMESTAMP | - | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_id (user_id)
+- INDEX idx_is_default (is_default)
+
+---
+
+### 3. user_api_keys - 用户API密钥管理表 🔥 新增
+
+**表说明**：管理用户的云存储API密钥，支持阿里云OSS、腾讯云COS、七牛云Kodo、MinIO等
+
+**创建时间**：2026-03-17
+
+**字段列表**：
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 主键ID，自增 |
+| user_id | bigint | NO | - | MUL | 用户ID（关联users_表） |
+| key_name | varchar(100) | NO | - | - | 密钥名称（用户自定义） |
+| key_type | varchar(20) | NO | aliyun_oss | - | 密钥类型：aliyun_oss/tencent_cos/qiniu_kodo/minio |
+| access_key_id | varchar(500) | NO | - | - | AccessKey ID（AES加密存储） |
+| access_key_secret | varchar(500) | NO | - | - | AccessKey Secret（AES加密存储） |
+| sts_role_arn | varchar(200) | YES | - | - | STS角色ARN（可选） |
+| sts_external_id | varchar(200) | YES | - | - | STS外部ID（可选） |
+| region | varchar(50) | YES | cn-hangzhou | - | 默认区域 |
+| is_default | tinyint | YES | 0 | - | 是否为默认密钥：0-否 1-是 |
+| is_active | tinyint | YES | 1 | - | 是否激活：0-禁用 1-启用 |
+| last_used_time | datetime | YES | - | - | 最后使用时间 |
+| last_verified_time | datetime | YES | - | - | 最后验证时间 |
+| verification_status | varchar(20) | YES | pending | - | 验证状态：pending/success/failed |
+| description | varchar(500) | YES | - | - | 描述 |
+| created_by | bigint | YES | - | - | 创建人 |
+| created_time | datetime | YES | CURRENT_TIMESTAMP | - | 创建时间 |
+| updated_by | bigint | YES | - | - | 更新人 |
+| updated_time | datetime | YES | CURRENT_TIMESTAMP | - | 更新时间 |
+| deleted_time | datetime | YES | - | - | 删除时间 |
+| is_deleted | tinyint | YES | 0 | - | 是否删除：0-否 1-是 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_id (user_id)
+- UNIQUE INDEX uk_user_key_name (user_id, key_name, is_deleted)
+- INDEX idx_user_default (user_id, is_default, is_deleted)
+- INDEX idx_user_active (user_id, is_active, is_deleted)
+
+**安全特性**：
+- ✅ AES加密存储AccessKey ID和Secret
+- ✅ 支持STS临时凭证
+- ✅ 支持密钥验证状态跟踪
+- ✅ 支持软删除
+- ✅ 支持默认密钥设置
+
+**关联关系**：
+- 与 duda_file.bucket_config 表的 api_key_id 字段关联
+- 一个密钥可以被多个bucket配置引用
+
+---
+
+### 4. user_auth_logs - 用户认证日志表
+
+**表说明**：记录用户的所有认证操作（注册、登录、登出等）
+
+**字段列表**：
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 日志ID，自增 |
+| user_id | bigint | YES | - | MUL | 用户ID |
+| auth_type | varchar(20) | NO | - | MUL | 认证类型：register-注册，login-登录，logout-登出，refresh-刷新Token |
+| login_type | varchar(20) | YES | - | - | 登录方式：phone_password, email_password, third_party |
+| client_type | varchar(20) | YES | - | - | 客户端类型：web, app, mini_program |
+| client_ip | varchar(50) | YES | - | MUL | 客户端IP |
+| device_id | varchar(100) | YES | - | - | 设备ID |
+| user_agent | varchar(500) | YES | - | - | User-Agent |
+| country | varchar(50) | YES | - | - | 国家 |
+| province | varchar(50) | YES | - | - | 省份 |
+| city | varchar(50) | YES | - | - | 城市 |
+| auth_status | tinyint | NO | 1 | - | 认证状态：1-成功，0-失败 |
+| fail_reason | varchar(200) | YES | - | - | 失败原因 |
+| create_time | datetime | YES | CURRENT_TIMESTAMP | MUL | 创建时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_id (user_id)
+- INDEX idx_auth_type (auth_type)
+- INDEX idx_client_ip (client_ip)
+- INDEX idx_create_time (create_time)
+
+---
+
+### 5. user_companies - 用户企业表
+
+**表说明**：管理用户的企业/公司关联信息
+
+**字段列表**：
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 记录ID，自增 |
+| user_id | bigint | NO | - | MUL | 用户ID |
+| company_id | bigint | YES | - | MUL | 企业ID |
+| company_name | varchar(200) | YES | - | - | 企业名称 |
+| department | varchar(100) | YES | - | - | 部门 |
+| position | varchar(100) | YES | - | - | 职位 |
+| is_primary | tinyint | YES | 1 | - | 是否主要企业：1-是，0-否 |
+| status | tinyint | YES | 1 | - | 状态：1-在职，2-离职 |
+| start_date | date | YES | - | - | 入职日期 |
+| end_date | date | YES | - | - | 离职日期 |
+| create_time | datetime | YES | CURRENT_TIMESTAMP | - | 创建时间 |
+| update_time | datetime | YES | CURRENT_TIMESTAMP | - | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_id (user_id)
+- INDEX idx_company_id (company_id)
+
+---
+
+### 6. user_login_history - 用户登录历史表
+
+**表说明**：详细记录用户的登录历史
+
+**字段列表**：
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 历史ID，自增 |
+| account_id | bigint | NO | - | MUL | 账户ID |
+| user_id | bigint | NO | - | MUL | 用户ID |
+| login_type | varchar(20) | NO | - | - | 登录类型 |
+| login_ip | varchar(50) | YES | - | - | 登录IP |
+| login_device | varchar(100) | YES | - | - | 登录设备 |
+| login_status | varchar(20) | YES | success | - | 登录状态 |
+| fail_reason | varchar(200) | YES | - | - | 失败原因 |
+| create_time | datetime | YES | CURRENT_TIMESTAMP | MUL | 创建时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_account_id (account_id)
+- INDEX idx_user_id (user_id)
+- INDEX idx_create_time (create_time)
+
+---
+
+### 7. user_profiles - 用户资料表
+
+**表说明**：存储用户的个人资料信息
+
+**字段列表**：
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 资料ID，自增 |
+| user_id | bigint | NO | - | UNI | 用户ID |
+| nickname | varchar(50) | YES | - | - | 昵称 |
+| gender | tinyint | YES | - | - | 性别：0-未知，1-男，2-女 |
+| birthday | date | YES | - | - | 生日 |
+| id_card | varchar(18) | YES | - | - | 身份证号 |
+| bio | varchar(500) | YES | - | - | 个人简介 |
+| signature | varchar(200) | YES | - | - | 个性签名 |
+| qq | varchar(20) | YES | - | - | QQ号 |
+| wechat | varchar(50) | YES | - | - | 微信号 |
+| tags | varchar(500) | YES | - | MUL | 用户标签（逗号分隔） |
+| privacy_level | tinyint | YES | 1 | - | 隐私级别：1-公开，2-好友可见，3-私密 |
+| create_time | datetime | YES | CURRENT_TIMESTAMP | - | 创建时间 |
+| update_time | datetime | YES | CURRENT_TIMESTAMP | - | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- UNIQUE INDEX uk_user_id (user_id)
+- INDEX idx_tags (tags)
+
+---
+
+### 8. user_roles - 用户角色表
+
+**表说明**：管理用户的角色权限信息
+
+**字段列表**：
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 角色ID，自增 |
+| user_id | bigint | NO | - | MUL | 用户ID |
+| role_code | varchar(50) | NO | - | MUL | 角色编码 |
+| role_name | varchar(50) | NO | - | - | 角色名称 |
+| scope_type | varchar(20) | YES | - | - | 权限范围：global-全局，company-企业，department-部门 |
+| scope_id | bigint | YES | - | - | 范围ID |
+| role_status | tinyint | YES | 1 | - | 角色状态：1-启用，0-禁用 |
+| grant_time | datetime | YES | CURRENT_TIMESTAMP | - | 授权时间 |
+| expire_time | datetime | YES | - | - | 过期时间（NULL表示永久） |
+| create_time | datetime | YES | CURRENT_TIMESTAMP | - | 创建时间 |
+| update_time | datetime | YES | CURRENT_TIMESTAMP | - | 更新时间 |
+| create_by | varchar(50) | YES | - | - | 创建人 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_id (user_id)
+- INDEX idx_role_code (role_code)
+
+---
+
+### 9. user_third_parties - 用户第三方登录表
+
+**表说明**：管理用户的第三方平台登录信息
+
+**字段列表**：
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 绑定ID，自增 |
+| user_id | bigint | NO | - | MUL | 用户ID |
+| platform | varchar(20) | NO | - | MUL | 平台类型：wechat-微信，qq-QQ，alipay-支付宝，weibo-微博 |
+| openid | varchar(100) | NO | - | - | 平台OpenID |
+| unionid | varchar(100) | YES | - | MUL | 平台UnionID |
+| nickname | varchar(100) | YES | - | - | 平台昵称 |
+| avatar_url | varchar(500) | YES | - | - | 平台头像 |
+| bind_time | datetime | YES | CURRENT_TIMESTAMP | - | 绑定时间 |
+| unbind_time | datetime | YES | - | - | 解绑时间 |
+| status | tinyint | YES | 1 | - | 状态：1-已绑定，0-已解绑 |
+| create_time | datetime | YES | CURRENT_TIMESTAMP | - | 创建时间 |
+| update_time | datetime | YES | CURRENT_TIMESTAMP | - | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- INDEX idx_user_id (user_id)
+- INDEX idx_platform (platform)
+- INDEX idx_unionid (unionid)
+
+---
+
+## 分片用户表（users_00 ~ users_99）
+
+**分片说明**：
+- 分片数量：100张
+- 表名格式：users_00, users_01, ..., users_99
+- 分片算法：user_id % 100
+- 每张表结构完全相同
+
+**users_xx 表结构**：
+
+| 字段名 | 数据类型 | 允许NULL | 默认值 | 键 | 说明 |
+|--------|----------|----------|--------|-----|------|
+| id | bigint | NO | - | PRI | 用户ID，自增（全局唯一） |
+| username | varchar(50) | YES | - | UNI | 用户名 |
+| phone | varchar(20) | YES | - | MUL | 手机号 |
+| email | varchar(100) | YES | - | MUL | 邮箱 |
+| password | varchar(255) | YES | - | - | 密码hash |
+| salt | varchar(50) | YES | - | - | 密码盐值 |
+| nickname | varchar(50) | YES | - | - | 昵称 |
+| avatar | varchar(500) | YES | - | - | 头像URL |
+| gender | tinyint | YES | - | - | 性别：0-未知，1-男，2-女 |
+| birthday | date | YES | - | - | 生日 |
+| status | tinyint | YES | 1 | MUL | 状态：1-正常，0-禁用，2-删除 |
+| register_type | varchar(20) | YES | - | - | 注册类型：phone/email/third_party |
+| register_ip | varchar(50) | YES | - | - | 注册IP |
+| last_login_time | datetime | YES | - | - | 最后登录时间 |
+| last_login_ip | varchar(50) | YES | - | - | 最后登录IP |
+| create_time | datetime | YES | CURRENT_TIMESTAMP | - | 创建时间 |
+| update_time | datetime | YES | CURRENT_TIMESTAMP | - | 更新时间 |
+
+**索引**：
+- PRIMARY KEY (id)
+- UNIQUE INDEX uk_username (username)
+- INDEX idx_phone (phone)
+- INDEX idx_email (email)
+- INDEX idx_status (status)
+
+**分片查询示例**：
+```sql
+-- 根据user_id查询（需要计算分片）
+SELECT * FROM users_23 WHERE id = 10023;  -- 10023 % 100 = 23
+
+-- 查询所有分片（需要UNION）
+SELECT * FROM (
+    SELECT * FROM users_00 WHERE phone = '13800138000'
+    UNION ALL
+    SELECT * FROM users_01 WHERE phone = '13800138000'
+    -- ... 省略其他分片
+    UNION ALL
+    SELECT * FROM users_99 WHERE phone = '13800138000'
+) AS all_users;
+```
+
+---
+
+## 数据库关系说明
+
+### 内部关联
+
+**user_accounts** → **users_xx**
+- user_accounts.user_id = users_xx.id
+- user_accounts.user_shard 用于快速定位分片
+
+**user_profiles** → **users_xx**
+- user_profiles.user_id = users_xx.id
+- 一对一关系
+
+**user_addresses** → **users_xx**
+- user_addresses.user_id = users_xx.id
+- 一对多关系
+
+**user_api_keys** → **users_xx**
+- user_api_keys.user_id = users_xx.id
+- 一对多关系
+
+**user_companies** → **users_xx**
+- user_companies.user_id = users_xx.id
+- 一对多关系
+
+**user_roles** → **users_xx**
+- user_roles.user_id = users_xx.id
+- 一对多关系
+
+**user_third_parties** → **users_xx**
+- user_third_parties.user_id = users_xx.id
+- 一对多关系
+
+### 跨库关联 🔥
+
+**user_api_keys** ← **duda_file.bucket_config**
+- duda_file.bucket_config.api_key_id → user_api_keys.id
+- 关系：多对一（多个bucket配置可以关联同一个API密钥）
+- 业务含义：统一管理云存储访问凭证
+
+---
+
+## 统计信息
+
+### 表统计
+- 主表数量：8张
+- 分表数量：100张
+- 总表数量：108张
+- 总字段数：2123个
+
+### 字段统计
+- user_accounts: 13个字段
+- user_addresses: 15个字段
+- user_api_keys: 21个字段 🔥 新增
+- user_auth_logs: 13个字段
+- user_companies: 11个字段
+- user_login_history: 8个字段
+- user_profiles: 13个字段
+- user_roles: 11个字段
+- user_third_parties: 12个字段
+- users_00 ~ users_99: 每张表18个字段 × 100 = 1800个字段
+
+### 索引统计
+- 主键索引：108个（每张表1个）
+- 唯一索引：200+（含分表）
+- 普通索引：300+
+
+---
+
+## 版本历史
+
+### v2.0 (2026-03-17) 🔥 最新版本
+- ✅ 新增user_api_keys表（21个字段）
+- ✅ 支持多云存储平台API密钥管理
+- ✅ AES加密存储敏感信息
+- ✅ 支持密钥验证状态跟踪
+- ✅ 与duda_file.bucket_config建立关联
+
+### v1.0 (2026-03-10)
+- 初始版本
+- 7张主表
+- 100张分片用户表
+- 支持用户管理、登录认证、第三方登录
+
+---
+
+## 字符集与排序规则
+
+### 数据库级别
+- 字符集：utf8mb4
+- 排序规则：utf8mb4_unicode_ci
+
+### 表级别
+所有表统一使用：
+- 字符集：utf8mb4
+- 排序规则：utf8mb4_unicode_ci
+
+### 支持内容
+✅ 中文、日文、韩文等多字节字符
+✅ Emoji表情符号
+✅ 特殊符号
+✅ 无乱码风险
+
+---
+
+## 性能优化建议
+
+### 分片表优化
+1. **路由优化**：使用user_shard字段快速定位分片
+2. **查询优化**：避免跨分片JOIN操作
+3. **索引优化**：确保常用查询字段都有索引
+
+### 主表优化
+1. **user_auth_logs**：按create_time按月分区
+2. **user_login_history**：按create_time按月分区
+3. **user_api_keys**：使用覆盖索引优化查询
+
+### 归档策略
+- 认证日志保留6个月
+- 登录历史保留1年
+- 已删除用户数据保留3年
+
+---
+
+## 数据备份与恢复
+
+### 备份策略
+- 全量备份：每天凌晨3点
+- 增量备份：每4小时一次
+- binlog保留：7天
+
+### 恢复流程
+```bash
+# 1. 停止应用
+# 2. 恢复全量备份
+mysql -uroot -p < duda_nexus_backup.sql
+
+# 3. 应用增量备份
+mysqlbinlog binlog.000001 | mysql -uroot -p
+
+# 4. 验证数据
+mysql -uroot -p -e "SELECT COUNT(*) FROM duda_nexus.users_00;"
+```
+
+---
+
+## 安全说明
+
+### 敏感数据处理
+- ✅ 密码：使用hash + salt存储
+- ✅ API密钥：AES加密存储
+- ✅ 身份证号：建议加密存储
+- ✅ 手机号/邮箱：脱敏显示
+
+### 访问控制
+- 应用层权限验证
+- 数据库读写分离
+- 敏感操作审计日志
+
+---
+
+**手册结束**
+
+*生成时间：2026-03-17*
+*数据库版本：MySQL 8.0.27*
+*字符集：utf8mb4_unicode_ci*
+*总表数：108张（8张主表 + 100张分表）*
+*总字段数：2123个*

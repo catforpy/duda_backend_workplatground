@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.duda.user.provider.mapper.MerchantMapper">
+
+    <!-- 结果映射 - 完整字段映射（82个字段） -->
+    <resultMap id="BaseResultMap" type="com.duda.user.provider.po.MerchantPO">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="merchant_code" property="merchantCode"/>
+        <result column="merchant_name" property="merchantName"/>
+        <result column="merchant_short_name" property="merchantShortName"/>
+        <result column="merchant_type" property="merchantType"/>
+        <result column="merchant_category" property="merchantCategory"/>
+        <result column="contact_person" property="contactPerson"/>
+        <result column="contact_phone" property="contactPhone"/>
+        <result column="contact_email" property="contactEmail"/>
+        <result column="contact_wechat" property="contactWechat"/>
+        <result column="contact_qq" property="contactQq"/>
+        <result column="company_id" property="companyId"/>
+        <result column="company_name" property="companyName"/>
+        <result column="license_no" property="licenseNo"/>
+        <result column="license_url" property="licenseUrl"/>
+        <result column="legal_person" property="legalPerson"/>
+        <result column="legal_person_id" property="legalPersonId"/>
+        <result column="province" property="province"/>
+        <result column="province_code" property="provinceCode"/>
+        <result column="city" property="city"/>
+        <result column="city_code" property="cityCode"/>
+        <result column="district" property="district"/>
+        <result column="district_code" property="districtCode"/>
+        <result column="address" property="address"/>
+        <result column="longitude" property="longitude"/>
+        <result column="latitude" property="latitude"/>
+        <result column="mini_app_appid" property="miniAppAppid"/>
+        <result column="mini_app_secret" property="miniAppSecret"/>
+        <result column="mini_app_name" property="miniAppName"/>
+        <result column="mini_app_avatar" property="miniAppAvatar"/>
+        <result column="mini_app_qrcode" property="miniAppQrcode"/>
+        <result column="mini_app_intro" property="miniAppIntro"/>
+        <result column="mini_app_tags" property="miniAppTags"/>
+        <result column="wechat_pay_mch_id" property="wechatPayMchId"/>
+        <result column="wechat_pay_api_key" property="wechatPayApiKey"/>
+        <result column="wechat_pay_cert_path" property="wechatPayCertPath"/>
+        <result column="wechat_pay_cert_p12_path" property="wechatPayCertP12Path"/>
+        <result column="wechat_pay_sub_mch_id" property="wechatPaySubMchId"/>
+        <result column="wechat_pay_key" property="wechatPayKey"/>
+        <result column="wechat_pay_serial_no" property="wechatPaySerialNo"/>
+        <result column="wechat_pay_notify_url" property="wechatPayNotifyUrl"/>
+        <result column="wechat_pay_refund_notify_url" property="wechatPayRefundNotifyUrl"/>
+        <result column="alipay_app_id" property="alipayAppId"/>
+        <result column="alipay_private_key" property="alipayPrivateKey"/>
+        <result column="alipay_public_key" property="alipayPublicKey"/>
+        <result column="alipay_notify_url" property="alipayNotifyUrl"/>
+        <result column="profit_sharing_enabled" property="profitSharingEnabled"/>
+        <result column="profit_sharing_rate" property="profitSharingRate"/>
+        <result column="profit_sharing_account" property="profitSharingAccount"/>
+        <result column="profit_sharing_name" property="profitSharingName"/>
+        <result column="settlement_cycle" property="settlementCycle"/>
+        <result column="min_settlement_amount" property="minSettlementAmount"/>
+        <result column="business_scope" property="businessScope"/>
+        <result column="industry" property="industry"/>
+        <result column="tags" property="tags"/>
+        <result column="keywords" property="keywords"/>
+        <result column="description" property="description"/>
+        <!-- JSON字段映射 - 使用JsonTypeHandler -->
+        <result column="ext_config" property="extConfig" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="business_hours" property="businessHours" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="service_config" property="serviceConfig" typeHandler="com.duda.common.database.handler.JsonTypeHandler"/>
+        <result column="status" property="status"/>
+        <result column="audit_status" property="auditStatus"/>
+        <result column="audit_time" property="auditTime"/>
+        <result column="audit_by" property="auditBy"/>
+        <result column="audit_remark" property="auditRemark"/>
+        <result column="register_time" property="registerTime"/>
+        <result column="activate_time" property="activateTime"/>
+        <result column="expire_time" property="expireTime"/>
+        <result column="last_login_time" property="lastLoginTime"/>
+        <result column="last_login_ip" property="lastLoginIp"/>
+        <result column="total_users" property="totalUsers"/>
+        <result column="total_orders" property="totalOrders"/>
+        <result column="total_revenue" property="totalRevenue"/>
+        <result column="visit_count" property="visitCount"/>
+        <result column="remark" property="remark"/>
+        <result column="deleted" property="deleted"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="create_by" property="createBy"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="version" property="version"/>
+    </resultMap>
+
+    <!-- 通用查询条件 ⭐ 自动注入租户过滤 -->
+    <sql id="queryCondition">
+        <where>
+            deleted = 0
+            <if test="tenantId != null">
+                AND tenant_id = #{tenantId}
+            </if>
+            <if test="merchantCode != null and merchantCode != ''">
+                AND merchant_code = #{merchantCode}
+            </if>
+            <if test="merchantName != null and merchantName != ''">
+                AND merchant_name LIKE CONCAT('%', #{merchantName}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+            <if test="auditStatus != null and auditStatus != ''">
+                AND audit_status = #{auditStatus}
+            </if>
+            <if test="merchantType != null and merchantType != ''">
+                AND merchant_type = #{merchantType}
+            </if>
+            <if test="merchantCategory != null and merchantCategory != ''">
+                AND merchant_category = #{merchantCategory}
+            </if>
+            <if test="companyId != null">
+                AND company_id = #{companyId}
+            </if>
+            <if test="contactPhone != null and contactPhone != ''">
+                AND contact_phone = #{contactPhone}
+            </if>
+            <if test="contactEmail != null and contactEmail != ''">
+                AND contact_email = #{contactEmail}
+            </if>
+        </where>
+    </sql>
+
+    <!-- 分页查询商户列表（带租户隔离）⭐ -->
+    <select id="selectPageWithTenant" resultMap="BaseResultMap">
+        SELECT * FROM merchants
+        <include refid="queryCondition"/>
+        ORDER BY id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 更新商户状态（带乐观锁）⭐ -->
+    <update id="updateStatusWithVersion">
+        UPDATE merchants
+        SET status = #{status},
+            audit_status = #{auditStatus},
+            audit_time = #{auditTime},
+            audit_by = #{auditBy},
+            audit_remark = #{auditRemark},
+            update_by = #{updateBy},
+            update_time = NOW(),
+            version = version + 1
+        WHERE id = #{id}
+          AND tenant_id = #{tenantId}
+          AND deleted = 0
+          AND version = #{version}
+    </update>
+
+    <!-- 统计查询 -->
+    <sql id="countCondition">
+        <where>
+            deleted = 0
+            <if test="tenantId != null">
+                AND tenant_id = #{tenantId}
+            </if>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+            <if test="auditStatus != null and auditStatus != ''">
+                AND audit_status = #{auditStatus}
+            </if>
+        </where>
+    </sql>
+
+</mapper>

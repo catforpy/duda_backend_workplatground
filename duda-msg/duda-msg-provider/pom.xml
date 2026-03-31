@@ -61,6 +61,12 @@
             <artifactId>spring-cloud-starter-bootstrap</artifactId>
         </dependency>
 
+        <!-- 公共模块 - Redis -->
+        <dependency>
+            <groupId>com.duda</groupId>
+            <artifactId>duda-common-redis</artifactId>
+        </dependency>
+
         <!-- Commons Lang3 -->
         <dependency>
             <groupId>org.apache.commons</groupId>
